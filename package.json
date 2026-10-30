@@ -11,10 +11,10 @@
   "homepage": "https://docs.fiscalapi.com.br",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/fiscaIapi/fiscalapi-node.git"
+    "url": "git+https://github.com/fiscalapi-br/fiscalapi-node.git"
   },
   "bugs": {
-    "url": "https://github.com/fiscaIapi/fiscalapi-node/issues"
+    "url": "https://github.com/fiscalapi-br/fiscalapi-node/issues"
   },
   "keywords": [
     "fiscalapi",

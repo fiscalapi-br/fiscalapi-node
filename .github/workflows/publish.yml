@@ -1,7 +1,7 @@
 # Publica no npm a cada tag vX.Y.Z, com atestação de proveniência. A tag precisa
 # bater com a versão do package.json e do src/version.ts.
 # Configuração única no npmjs.com: pacote fiscalapi-br → Settings →
-# Trusted Publishers → GitHub Actions: owner "fiscaIapi", repo
+# Trusted Publishers → GitHub Actions: owner "fiscalapi-br", repo
 # "fiscalapi-node", workflow "publish.yml". (Alternativa: secret NPM_TOKEN.)
 # Na primeira publicação o pacote ainda não existe no npm: use o NPM_TOKEN
 # uma vez e depois cadastre o Trusted Publisher.
