@@ -245,3 +245,131 @@ export interface PerfilProdutorResponse {
   cnir?: CnirResponse | null;
   [extra: string]: unknown;
 }
+
+export interface SimplesNacionalEventoFuturo {
+  regime: string;
+  descricao: string;
+  data_efeito: string;
+}
+
+export interface SimplesNacionalPeriodoAnterior {
+  data_inicial: string;
+  data_final: string;
+  detalhamento: string;
+}
+
+export interface SimplesNacionalMaisInfo {
+  opcoes_periodos_anteriores?: string;
+  opcoes_periodos_anteriores_lista?: SimplesNacionalPeriodoAnterior[];
+  enquadramentos_simei_periodos_anteriores?: string;
+  enquadramentos_simei_periodos_anteriores_lista?: SimplesNacionalPeriodoAnterior[];
+  eventos_futuros_simples?: string;
+  eventos_futuros_simei?: string;
+  mei_tac?: string;
+}
+
+export interface SimplesNacionalResponse {
+  request_id: string;
+  cnpj: string;
+  /** Para filiais, a situação é a da matriz. */
+  cnpj_matriz: string;
+  nome_empresarial: string;
+  data_consulta: string;
+  situacao_simples: string;
+  optante_simples: boolean;
+  data_opcao_simples?: string | null;
+  situacao_simei: string;
+  enquadrado_simei: boolean;
+  regime_regular_ibs: string;
+  regime_regular_cbs: string;
+  eventos_futuros?: SimplesNacionalEventoFuturo[];
+  mais_info?: SimplesNacionalMaisInfo | null;
+  cached: boolean;
+}
+
+export interface NfseEndereco {
+  logradouro?: string | null;
+  numero?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+  cep?: string | null;
+  municipio?: string | null;
+  uf?: string | null;
+}
+
+export interface NfseEmitente {
+  razao_social?: string | null;
+  cpf_cnpj?: string | null;
+  inscricao_municipal?: string | null;
+  situacao_simples_nacional?: string | null;
+  regime_especial_tributacao?: string | null;
+  endereco?: NfseEndereco | null;
+}
+
+export interface NfsePessoa {
+  cpf_cnpj?: string | null;
+  inscricao_municipal?: string | null;
+  nome?: string | null;
+}
+
+export interface NfseServico {
+  pais?: string | null;
+  municipio?: string | null;
+  codigo_tributacao_nacional?: string | null;
+  descricao_codigo?: string | null;
+  item_nbs?: string | null;
+  descricao?: string | null;
+}
+
+export interface NfseTributacaoMunicipal {
+  tributacao_issqn?: string | null;
+  municipio_incidencia?: string | null;
+  valor_servico?: number | null;
+  desconto_incondicionado?: number | null;
+  deducoes?: number | null;
+  beneficio_municipal?: number | null;
+  base_calculo?: number | null;
+  /** Percentual (2.5 = 2,5%). */
+  aliquota?: number | null;
+  valor_issqn?: number | null;
+  retencao?: string | null;
+}
+
+export interface NfseTributacaoFederal {
+  situacao_pis_cofins?: string | null;
+  base_calculo_pis_cofins?: number | null;
+  aliquota_pis?: number | null;
+  valor_pis?: number | null;
+  aliquota_cofins?: number | null;
+  valor_cofins?: number | null;
+  irrf?: number | null;
+  contribuicoes_sociais_retidas?: number | null;
+  contribuicao_previdenciaria_retida?: number | null;
+}
+
+export interface NfseResponse {
+  request_id: string;
+  chave: string;
+  numero_nfse?: string | null;
+  codigo_municipio_emissor?: string | null;
+  data_geracao?: string | null;
+  versao?: string | null;
+  dps?: { numero?: string | null; serie?: string | null; data_emissao?: string | null } | null;
+  /** `codigo` 100 gerada, 101 substituição, 102 decisão judicial, 103 avulsa. Não indica cancelamento. */
+  situacao?: { codigo?: string | null; descricao?: string | null } | null;
+  emitente?: NfseEmitente | null;
+  tomador?: NfsePessoa | null;
+  intermediario?: NfsePessoa | null;
+  servico?: NfseServico | null;
+  tributacao_municipal?: NfseTributacaoMunicipal | null;
+  tributacao_federal?: NfseTributacaoFederal | null;
+  total_tributos?: Array<{ descricao: string; valor?: number | null }>;
+  informacoes_complementares?: string | null;
+  ambiente_gerador?: string | null;
+  cached: boolean;
+  /** PDF do DANFSe em base64 (só com `danfse: true`). */
+  danfse_pdf_base64?: string | null;
+  /** Presente quando o PDF pedido não pôde ser obtido. */
+  aviso?: string | null;
+  [extra: string]: unknown;
+}

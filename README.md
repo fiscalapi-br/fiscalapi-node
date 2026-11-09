@@ -1,6 +1,6 @@
 # FiscalAPI — SDK Node.js / TypeScript
 
-Cliente JavaScript/TypeScript da [FiscalAPI](https://fiscalapi.com.br): Inscrição Estadual nos 27 estados, CNPJ, certidões (CND estadual, CND Federal, CNDT, CRF/FGTS), XML de NF-e por chave, SIGEF, CNIR e perfil do produtor rural.
+Cliente JavaScript/TypeScript da [FiscalAPI](https://fiscalapi.com.br): Inscrição Estadual nos 27 estados, CNPJ, certidões (CND estadual, CND Federal, CNDT, CRF/FGTS), XML de NF-e por chave, NFS-e por chave, Simples Nacional, SIGEF, CNIR e perfil do produtor rural.
 
 - Zero dependências: usa o `fetch` nativo (Node 18+, Bun, Deno, edge runtimes).
 - Tipado em TypeScript, com ESM e CommonJS.
@@ -53,6 +53,8 @@ const { FiscalAPI } = require('fiscalapi-br');
 | `consultarCndt({ cpf \| cnpj })` | `GET /api/consultar-cndt` | Certidão de débitos trabalhistas |
 | `consultarCrfFgts({ cpf \| cnpj })` | `GET /api/consultar-crf-fgts` | Regularidade do FGTS |
 | `consultarCertidoesTodas({ cpf \| cnpj, skipEstaduais? })` | `GET /api/certidoes-todas` | Todas as certidões em uma chamada |
+| `consultarSimplesNacional({ cnpj })` | `GET /api/consultar-simples-nacional` | Situação no Simples Nacional e SIMEI |
+| `consultarNfse({ chave, danfse? })` | `GET /api/consultar-nfse` | NFS-e (padrão nacional) por chave, sem certificado |
 | `consultarNfeXml({ chave, certificado, senha, manifestar? })` | `POST /api/consultar-nfe-xml` | XML completo da NF-e |
 | `consultarSigef({ cpf \| cnpj })` | `GET /api/consultar-sigef` | Parcelas certificadas no SIGEF/INCRA |
 | `consultarSigefParcela({ uuid, forceFresh? })` | `GET /api/consultar-sigef-parcela` | Uma parcela com polígono, vértices e confrontantes |
@@ -84,6 +86,25 @@ console.log(empresa.result?.razao_social, empresa.result?.situacao_cadastral);
 // Dado atual, sem cache (consome mais créditos):
 await api.consultarCnpj({ cnpj: '12345678000195', forceFresh: true });
 ```
+
+### Simples Nacional
+
+```ts
+const r = await api.consultarSimplesNacional({ cnpj: '11222333000181' });
+console.log(r.optante_simples, r.situacao_simei, r.regime_regular_ibs);
+```
+
+### NFS-e por chave
+
+```ts
+const nfse = await api.consultarNfse({
+  chave: '35503082211222333000181000000000012326100000045676',
+  danfse: true, // opcional: PDF do DANFSe em base64
+});
+console.log(nfse.emitente?.razao_social, nfse.tributacao_municipal?.valor_servico);
+```
+
+Uma consulta nova leva de 30 a 60 segundos. Só a NFS-e entregue é cobrada.
 
 ### Certidões com PDF
 
