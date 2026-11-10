@@ -17,9 +17,11 @@ import type {
   ConsultaIEResponse,
   ConsultaIETodosResponse,
   NfeXmlResponse,
+  NfseResponse,
   PerfilProdutorResponse,
   SigefParcelaResponse,
   SigefResponse,
+  SimplesNacionalResponse,
 } from './types.js';
 import { VERSION } from './version.js';
 
@@ -127,6 +129,12 @@ export class FiscalAPI {
     });
   }
 
+  /** Situação no Simples Nacional e SIMEI (`GET /api/consultar-simples-nacional`). */
+  consultarSimplesNacional(params: { cnpj: string }): Promise<SimplesNacionalResponse> {
+    if (!params.cnpj?.trim()) throw new Error('Informe o CNPJ.');
+    return this.get('/api/consultar-simples-nacional', { cnpj: params.cnpj.trim() });
+  }
+
   // --------------------------------------------------------- Certidões
 
   /** CND estadual (ICMS) em uma UF (`GET /api/consultar-cnd`). */
@@ -192,6 +200,17 @@ export class FiscalAPI {
       senha: params.senha,
       manifestar: params.manifestar ?? true,
     });
+  }
+
+  /**
+   * NFS-e (padrão nacional) pela chave de acesso, sem certificado
+   * (`GET /api/consultar-nfse`). Com `danfse: true`, inclui o PDF em base64.
+   * Uma consulta nova pode levar de 30 a 60 segundos.
+   */
+  consultarNfse(params: { chave: string; danfse?: boolean }): Promise<NfseResponse> {
+    const chave = (params.chave ?? '').replace(/\D/g, '');
+    if (!chave) throw new Error('Informe a chave de acesso.');
+    return this.get('/api/consultar-nfse', { chave, danfse: params.danfse || undefined });
   }
 
   // ------------------------------------------------------ Imóvel rural
