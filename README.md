@@ -16,7 +16,7 @@ npm install fiscalapi-br
 ## Antes de começar
 
 1. Crie sua conta em [app.fiscalapi.com.br](https://app.fiscalapi.com.br) e copie a chave de API no painel.
-2. **10 consultas grátis por mês, no painel e pela API**: IE em um estado e CNPJ, para conta que nunca assinou plano, com e-mail confirmado e sem recarga. Não valem para IE em todos os estados nem para CNPJ ao vivo. Depois disso, é preciso plano ou saldo: a API responde `402` (`InsufficientBalanceError`). Sem chave, `403` (`AuthenticationError`).
+2. **10 consultas grátis por mês, no painel e pela API**: qualquer consulta avulsa (IE em um estado, CNPJ inclusive ao vivo, Simples Nacional, NFS-e, certidões, CNIR, SIGEF e as demais), para conta que nunca assinou plano, com e-mail confirmado e sem recarga. Cada consulta entregue gasta 1 das 10; erro não gasta. Ficam fora a NF-e sem certificado, as consultas em todos os estados (IE ou CND) e todas as certidões de uma vez. À parte, 10 XML de NF-e com certificado por mês. Fora disso, ou depois das 10, é preciso plano ou saldo: a API responde `402` (`InsufficientBalanceError`). Sem chave, `403` (`AuthenticationError`).
 3. Planos e consumo de créditos: [docs.fiscalapi.com.br](https://docs.fiscalapi.com.br/docs/referencia/plans-and-limits).
 
 > Não use a chave de API no navegador: ela daria acesso ao seu saldo a qualquer visitante. Chame a FiscalAPI a partir do seu servidor.
