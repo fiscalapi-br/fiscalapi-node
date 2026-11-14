@@ -16,7 +16,7 @@ npm install fiscalapi-br
 ## Antes de começar
 
 1. Crie sua conta em [app.fiscalapi.com.br](https://app.fiscalapi.com.br) e copie a chave de API no painel.
-2. **Plano ou recarga:** pela API, toda consulta pede plano ou saldo, a partir de R$ 19,99/mês. As 10 consultas grátis do mês são só no painel: teste lá antes de assinar. Sem plano nem saldo, a API responde `402` (`InsufficientBalanceError`). Sem chave, `403` (`AuthenticationError`).
+2. **Plano ou recarga:** pela API, toda consulta pede plano ou saldo, a partir de R$ 50 por mês. As 10 consultas grátis do mês são só no painel: teste lá antes de assinar. Sem plano nem saldo, a API responde `402` (`InsufficientBalanceError`). Sem chave, `403` (`AuthenticationError`).
 3. Planos e consumo de créditos: [docs.fiscalapi.com.br](https://docs.fiscalapi.com.br/docs/referencia/plans-and-limits).
 
 > Não use a chave de API no navegador: ela daria acesso ao seu saldo a qualquer visitante. Chame a FiscalAPI a partir do seu servidor.
