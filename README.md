@@ -1,6 +1,6 @@
 # FiscalAPI — SDK Node.js / TypeScript
 
-Cliente JavaScript/TypeScript da [FiscalAPI](https://fiscalapi.com.br): Inscrição Estadual nos 27 estados, CNPJ, certidões (CND estadual, CND Federal, CNDT, CRF/FGTS), XML de NF-e por chave, NFS-e por chave, Simples Nacional, SIGEF, CNIR e perfil do produtor rural.
+Cliente JavaScript/TypeScript da [FiscalAPI](https://fiscalapi.com.br): Inscrição Estadual nos 27 estados, CNPJ, certidões (CND estadual, CND Federal, CNDT, CRF/FGTS), XML de NF-e e de CT-e por chave, NFS-e por chave, Simples Nacional, SIGEF, CNIR e perfil do produtor rural.
 
 - Zero dependências: usa o `fetch` nativo (Node 18+, Bun, Deno, edge runtimes).
 - Tipado em TypeScript, com ESM e CommonJS.
@@ -56,12 +56,13 @@ const { FiscalAPI } = require('fiscalapi-br');
 | `consultarSimplesNacional({ cnpj })` | `GET /api/consultar-simples-nacional` | Situação no Simples Nacional e SIMEI |
 | `consultarNfse({ chave, danfse? })` | `GET /api/consultar-nfse` | NFS-e (padrão nacional) por chave, sem certificado |
 | `consultarNfeXml({ chave, certificado, senha, manifestar? })` | `POST /api/consultar-nfe-xml` | XML completo da NF-e |
+| `consultarCteXml({ chave, certificado, senha })` | `POST /api/consultar-cte-xml` | XML completo do CT-e |
 | `consultarSigef({ cpf \| cnpj })` | `GET /api/consultar-sigef` | Parcelas certificadas no SIGEF/INCRA |
 | `consultarSigefParcela({ uuid, forceFresh? })` | `GET /api/consultar-sigef-parcela` | Uma parcela com polígono, vértices e confrontantes |
 | `consultarCnir({ cpf \| cnpj })` | `GET /api/consultar-cnir` | Imóveis rurais no CNIR/CAFIR |
 | `perfilProdutor({ cpf \| cnpj })` | `GET /api/perfil-produtor` | Perfil consolidado do produtor |
 
-Informe **um** documento por chamada. Pontuação é aceita. As respostas trazem o JSON completo da API, com tipos exportados (`ConsultaIEResponse`, `CNDResponse`, `NfeXmlResponse` etc.).
+Informe **um** documento por chamada. Pontuação é aceita. As respostas trazem o JSON completo da API, com tipos exportados (`ConsultaIEResponse`, `CNDResponse`, `NfeXmlResponse`, `CteXmlResponse` etc.).
 
 ## Exemplos
 
@@ -143,6 +144,25 @@ if (nota.status === 'ok' && nota.xml) {
 ```
 
 O certificado A1 precisa ser de um participante da nota (emitente, destinatário, transportador ou autorizado) e **não é armazenado** pela API. Só há cobrança quando o XML é devolvido.
+
+### XML de CT-e por chave
+
+```ts
+import { readFile, writeFile } from 'node:fs/promises';
+
+const cte = await api.consultarCteXml({
+  chave: '51261011222333000181570010000001231123456784',
+  certificado: await readFile('certificado.pfx'), // bytes ou string base64
+  senha: 'senha-do-certificado',
+});
+if (cte.status === 'ok' && cte.xml) {
+  await writeFile(`${cte.chave}.xml`, cte.xml, 'utf8');
+} else {
+  console.log(cte.status, cte.mensagem);
+}
+```
+
+Aceita CT-e (modelo 57), CT-e OS (67) e GTV-e (64). O certificado A1 precisa ser de um participante do documento (emitente, tomador, remetente, destinatário, expedidor ou recebedor) e **não é armazenado** pela API. Só há cobrança quando o XML é devolvido.
 
 ### Imóvel rural
 

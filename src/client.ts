@@ -16,6 +16,7 @@ import type {
   CNPJResponse,
   ConsultaIEResponse,
   ConsultaIETodosResponse,
+  CteXmlResponse,
   NfeXmlResponse,
   NfseResponse,
   PerfilProdutorResponse,
@@ -199,6 +200,26 @@ export class FiscalAPI {
       certificado: certificadoBase64(params.certificado),
       senha: params.senha,
       manifestar: params.manifestar ?? true,
+    });
+  }
+
+  /**
+   * XML completo de um CT-e, CT-e OS ou GTV-e pela chave de acesso
+   * (`POST /api/consultar-cte-xml`). O certificado A1 precisa ser de um
+   * participante do documento e não é armazenado. Só há cobrança quando o XML
+   * é devolvido. Não é repetido automaticamente em 5xx.
+   */
+  consultarCteXml(params: {
+    chave: string;
+    certificado: Certificado;
+    senha: string;
+  }): Promise<CteXmlResponse> {
+    if (!params.chave) throw new Error('Informe a chave de acesso.');
+    return this.request('POST', '/api/consultar-cte-xml', undefined, {
+      // Aceita CNPJ alfanumérico: só tira separadores e põe em maiúsculas.
+      chave: params.chave.replace(/[^0-9A-Za-z]/g, '').toUpperCase(),
+      certificado: certificadoBase64(params.certificado),
+      senha: params.senha,
     });
   }
 

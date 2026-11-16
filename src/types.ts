@@ -181,6 +181,16 @@ export interface NfeXmlResponse {
   resultados: NfeXmlResultado[];
 }
 
+export interface CteXmlResponse {
+  request_id: string;
+  chave: string;
+  status: 'ok' | 'nao_autorizado' | 'nao_encontrado' | 'erro';
+  /** XML completo (cteProc), presente quando `status === 'ok'`. */
+  xml?: string | null;
+  mensagem?: string;
+  creditos_cobrados: number;
+}
+
 export interface SigefParcela {
   parcel_id?: string;
   codigo_parcela?: string;
