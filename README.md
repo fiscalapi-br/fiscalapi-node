@@ -1,6 +1,6 @@
 # FiscalAPI — SDK Node.js / TypeScript
 
-Cliente JavaScript/TypeScript da [FiscalAPI](https://fiscalapi.com.br): Inscrição Estadual nos 27 estados, CNPJ, certidões (CND estadual, CND Federal, CNDT, CRF/FGTS), XML de NF-e e de CT-e por chave, NFS-e por chave, Simples Nacional, SIGEF, CNIR e perfil do produtor rural.
+Cliente JavaScript/TypeScript da [FiscalAPI](https://fiscalapi.com.br): Inscrição Estadual nos 27 estados, CNPJ, certidões (CND estadual, CND Federal, CNDT, CRF/FGTS), XML de NF-e e de CT-e por chave, DIFAL de saída por UF, NFS-e por chave, Simples Nacional, SIGEF, CNIR e perfil do produtor rural.
 
 - Zero dependências: usa o `fetch` nativo (Node 18+, Bun, Deno, edge runtimes).
 - Tipado em TypeScript, com ESM e CommonJS.
@@ -57,12 +57,13 @@ const { FiscalAPI } = require('fiscalapi-br');
 | `consultarNfse({ chave, danfse? })` | `GET /api/consultar-nfse` | NFS-e (padrão nacional) por chave, sem certificado |
 | `consultarNfeXml({ chave, certificado, senha, manifestar? })` | `POST /api/consultar-nfe-xml` | XML completo da NF-e |
 | `consultarCteXml({ chave, certificado, senha })` | `POST /api/consultar-cte-xml` | XML completo do CT-e |
+| `consultarDifalSaida({ certificado, senha, competencia, ufs? })` | `POST /api/consultar-difal-saida` | DIFAL de saída por UF de destino (Beta) |
 | `consultarSigef({ cpf \| cnpj })` | `GET /api/consultar-sigef` | Parcelas certificadas no SIGEF/INCRA |
 | `consultarSigefParcela({ uuid, forceFresh? })` | `GET /api/consultar-sigef-parcela` | Uma parcela com polígono, vértices e confrontantes |
 | `consultarCnir({ cpf \| cnpj })` | `GET /api/consultar-cnir` | Imóveis rurais no CNIR/CAFIR |
 | `perfilProdutor({ cpf \| cnpj })` | `GET /api/perfil-produtor` | Perfil consolidado do produtor |
 
-Informe **um** documento por chamada. Pontuação é aceita. As respostas trazem o JSON completo da API, com tipos exportados (`ConsultaIEResponse`, `CNDResponse`, `NfeXmlResponse`, `CteXmlResponse` etc.).
+Informe **um** documento por chamada. Pontuação é aceita. As respostas trazem o JSON completo da API, com tipos exportados (`ConsultaIEResponse`, `CNDResponse`, `NfeXmlResponse`, `CteXmlResponse`, `DifalSaidaResponse` etc.).
 
 ## Exemplos
 
@@ -163,6 +164,28 @@ if (cte.status === 'ok' && cte.xml) {
 ```
 
 Aceita CT-e (modelo 57), CT-e OS (67) e GTV-e (64). O certificado A1 precisa ser de um participante do documento (emitente, tomador, remetente, destinatário, expedidor ou recebedor) e **não é armazenado** pela API. Só há cobrança quando o XML é devolvido.
+
+### DIFAL de saída por UF de destino (Beta)
+
+```ts
+import { readFile } from 'node:fs/promises';
+
+const difal = await api.consultarDifalSaida({
+  certificado: await readFile('certificado-do-emitente.pfx'), // bytes ou string base64
+  senha: 'senha-do-certificado',
+  competencia: '2026-10',
+  ufs: ['RS', 'SC'], // omita para as 10 UFs
+});
+for (const uf of difal.ufs) {
+  console.log(uf.uf, uf.status, uf.valor_em_aberto);
+  for (const nota of uf.notas.filter((n) => n.em_aberto)) {
+    console.log('  ', nota.serie, nota.numero, nota.situacao_guia_difal, nota.valor_em_aberto);
+  }
+}
+if (!difal.completo) console.log('Alguma UF não veio completa: os totais podem estar incompletos.');
+```
+
+Lista as NF-e do mês com DIFAL e FCP destacados, a situação da guia de cada nota e o valor em aberto, nas UFs de destino AC, AP, DF, GO, MS, MT, RR, RS, SC e SE. O certificado A1 é o do **emitente** das notas e **não é armazenado** pela API. Só `paga` quita: `sem_guia_no_portal`, `pendente_pagamento` e `geracao_rejeitada` somam em `valor_em_aberto`. Cobra 1 consulta por UF com `status: 'ok'`. Guia emitida fora do portal (ERP, Portal GNRE) não aparece. Detalhes: [documentação](https://docs.fiscalapi.com.br/docs/difal/consultar-difal-saida).
 
 ### Imóvel rural
 
