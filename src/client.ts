@@ -216,7 +216,8 @@ export class FiscalAPI {
   }): Promise<CteXmlResponse> {
     if (!params.chave) throw new Error('Informe a chave de acesso.');
     return this.request('POST', '/api/consultar-cte-xml', undefined, {
-      chave: params.chave.replace(/\D/g, ''),
+      // Aceita CNPJ alfanumérico: só tira separadores e põe em maiúsculas.
+      chave: params.chave.replace(/[^0-9A-Za-z]/g, '').toUpperCase(),
       certificado: certificadoBase64(params.certificado),
       senha: params.senha,
     });

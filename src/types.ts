@@ -184,8 +184,7 @@ export interface NfeXmlResponse {
 export interface CteXmlResponse {
   request_id: string;
   chave: string;
-  /** ok | nao_autorizado | nao_encontrado | erro */
-  status: string;
+  status: 'ok' | 'nao_autorizado' | 'nao_encontrado' | 'erro';
   /** XML completo (cteProc), presente quando `status === 'ok'`. */
   xml?: string | null;
   mensagem?: string;
