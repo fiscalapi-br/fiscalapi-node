@@ -17,12 +17,14 @@ import type {
   ConsultaIEResponse,
   ConsultaIETodosResponse,
   CteXmlResponse,
+  DifalSaidaResponse,
   NfeXmlResponse,
   NfseResponse,
   PerfilProdutorResponse,
   SigefParcelaResponse,
   SigefResponse,
   SimplesNacionalResponse,
+  UfDifal,
 } from './types.js';
 import { VERSION } from './version.js';
 
@@ -220,6 +222,37 @@ export class FiscalAPI {
       chave: params.chave.replace(/[^0-9A-Za-z]/g, '').toUpperCase(),
       certificado: certificadoBase64(params.certificado),
       senha: params.senha,
+    });
+  }
+
+  // ------------------------------------------------------------- DIFAL
+
+  /**
+   * DIFAL de saída (EC 87/2015) por UF de destino, num mês
+   * (`POST /api/consultar-difal-saida`). Beta. O certificado A1 é o do
+   * EMITENTE das notas e não é armazenado. `ufs` omitido = as 10 UFs
+   * atendidas (AC, AP, DF, GO, MS, MT, RR, RS, SC, SE). Cobra 1 consulta por
+   * UF com `status: 'ok'`. Pode levar cerca de 70 s. Não é repetido
+   * automaticamente em 5xx.
+   */
+  consultarDifalSaida(params: {
+    certificado: Certificado;
+    senha: string;
+    /** Mês de emissão das notas, `AAAA-MM`. */
+    competencia: string;
+    /** UFs de destino. Omitido ou vazio = as 10. */
+    ufs?: UfDifal[];
+  }): Promise<DifalSaidaResponse> {
+    const competencia = (params.competencia ?? '').trim();
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)) {
+      throw new Error('Informe a competência no formato AAAA-MM (ex.: 2026-10).');
+    }
+    const ufs = params.ufs?.map((u) => uf(u));
+    return this.request('POST', '/api/consultar-difal-saida', undefined, {
+      certificado: certificadoBase64(params.certificado),
+      senha: params.senha,
+      competencia,
+      ...(ufs && ufs.length ? { ufs } : {}),
     });
   }
 

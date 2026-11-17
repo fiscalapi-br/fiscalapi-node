@@ -191,6 +191,100 @@ export interface CteXmlResponse {
   creditos_cobrados: number;
 }
 
+/** UFs de destino atendidas pelo DIFAL de saída. */
+export type UfDifal = 'AC' | 'AP' | 'DF' | 'GO' | 'MS' | 'MT' | 'RR' | 'RS' | 'SC' | 'SE';
+
+/** Situação da guia de um tributo da nota. Só `paga` quita. */
+export type SituacaoGuiaDifal =
+  | 'sem_guia_no_portal'
+  | 'pendente_pagamento'
+  | 'paga'
+  | 'geracao_rejeitada'
+  | 'aguardando_processamento'
+  | 'substituida'
+  | 'guia_gerada'
+  | 'nao_se_aplica'
+  | 'desconhecida';
+
+/** ok (cobrada) | parcial, erro, nao_consultada (não cobradas). */
+export type StatusUfDifal = 'ok' | 'parcial' | 'erro' | 'nao_consultada';
+
+export interface NotaDifal {
+  serie: string;
+  numero: string;
+  /** AAAA-MM-DD */
+  data_emissao: string | null;
+  /** Vencimento do imposto, AAAA-MM-DD. */
+  vencimento: string | null;
+  destinatario: string;
+  uf_destino: string;
+  valor_total: number | null;
+  valor_difal: number | null;
+  valor_fcp: number | null;
+  situacao_guia_difal: SituacaoGuiaDifal;
+  situacao_guia_fcp: SituacaoGuiaDifal;
+  /** Sem guia no portal (menos em DF, GO e MT), ou guia pendente de pagamento ou rejeitada. */
+  em_aberto: boolean;
+  valor_em_aberto: number;
+  /**
+   * Guia existe, mas o pagamento não foi confirmado; em DF, GO e MT, também a nota
+   * sem guia no portal (lá a guia é emitida no sistema da SEFAZ). Fora do valor em aberto.
+   */
+  a_conferir: boolean;
+  valor_a_conferir: number;
+}
+
+export interface GuiaDifal {
+  numero: string;
+  vencimento_imposto: string | null;
+  data_limite_pagamento: string | null;
+  uf: string;
+  tributo: string;
+  valor: number | null;
+  /** paga | pendente_pagamento | geracao_rejeitada | aguardando_processamento | substituida */
+  situacao: string | null;
+}
+
+export interface UfDifalResultado {
+  uf: string;
+  status: StatusUfDifal;
+  mensagem: string;
+  total_documentos: number;
+  valor_difal: number;
+  valor_fcp: number;
+  valor_em_aberto: number;
+  notas_em_aberto: number;
+  valor_a_conferir: number;
+  notas_a_conferir: number;
+  notas: NotaDifal[];
+  guias: GuiaDifal[];
+}
+
+export interface DifalSaidaResponse {
+  request_id: string;
+  fonte: string;
+  /** CNPJ ou CPF do titular do certificado. */
+  emitente_tipo: string;
+  emitente_documento: string;
+  /** AAAA-MM */
+  competencia: string;
+  periodo_inicio: string;
+  periodo_fim: string;
+  total_documentos: number;
+  valor_difal: number;
+  valor_fcp: number;
+  valor_em_aberto: number;
+  notas_em_aberto: number;
+  valor_a_conferir: number;
+  notas_a_conferir: number;
+  /** `true` só quando todas as UFs pedidas vieram `ok`. */
+  completo: boolean;
+  ufs: UfDifalResultado[];
+  avisos: string[];
+  /** Consultas usadas: 1 por UF com `status: 'ok'`. */
+  creditos_cobrados: number;
+}
+
 export interface SigefParcela {
   parcel_id?: string;
   codigo_parcela?: string;
