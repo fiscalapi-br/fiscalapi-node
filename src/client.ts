@@ -24,6 +24,7 @@ import type {
   SigefParcelaResponse,
   SigefResponse,
   SimplesNacionalResponse,
+  UfDifal,
 } from './types.js';
 import { VERSION } from './version.js';
 
@@ -239,8 +240,8 @@ export class FiscalAPI {
     senha: string;
     /** Mês de emissão das notas, `AAAA-MM`. */
     competencia: string;
-    /** Siglas das UFs de destino (`UfDifal`). Omitido = as 10. */
-    ufs?: string[];
+    /** UFs de destino. Omitido ou vazio = as 10. */
+    ufs?: UfDifal[];
   }): Promise<DifalSaidaResponse> {
     const competencia = (params.competencia ?? '').trim();
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)) {

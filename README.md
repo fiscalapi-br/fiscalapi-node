@@ -185,7 +185,7 @@ for (const uf of difal.ufs) {
 if (!difal.completo) console.log('Alguma UF não veio completa: os totais podem estar incompletos.');
 ```
 
-Lista as NF-e do mês com DIFAL e FCP destacados, a situação da guia de cada nota e o valor em aberto, nas UFs de destino AC, AP, DF, GO, MS, MT, RR, RS, SC e SE. O certificado A1 é o do **emitente** das notas e **não é armazenado** pela API. Só `paga` quita: `sem_guia_no_portal`, `pendente_pagamento` e `geracao_rejeitada` somam em `valor_em_aberto`. Cobra 1 consulta por UF com `status: 'ok'`. Guia emitida fora do portal (ERP, Portal GNRE) não aparece. Detalhes: [documentação](https://docs.fiscalapi.com.br/docs/difal/consultar-difal-saida).
+Lista as NF-e do mês com DIFAL e FCP destacados, a situação da guia de cada nota e o valor em aberto, nas UFs de destino AC, AP, DF, GO, MS, MT, RR, RS, SC e SE. O certificado A1 é o do **emitente** das notas e **não é armazenado** pela API. Só `paga` quita: `sem_guia_no_portal`, `pendente_pagamento` e `geracao_rejeitada` somam em `valor_em_aberto`, menos em DF, GO e MT, onde a guia é emitida no sistema da SEFAZ e a nota `sem_guia_no_portal` soma em `valor_a_conferir`. Cobra 1 consulta por UF com `status: 'ok'`. Guia emitida fora do portal (ERP, Portal GNRE) não aparece. Detalhes: [documentação](https://docs.fiscalapi.com.br/docs/difal/consultar-difal-saida).
 
 ### Imóvel rural
 

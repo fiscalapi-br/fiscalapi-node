@@ -223,10 +223,13 @@ export interface NotaDifal {
   valor_fcp: number | null;
   situacao_guia_difal: SituacaoGuiaDifal;
   situacao_guia_fcp: SituacaoGuiaDifal;
-  /** Sem guia no portal, ou guia pendente de pagamento ou rejeitada. */
+  /** Sem guia no portal (menos em DF, GO e MT), ou guia pendente de pagamento ou rejeitada. */
   em_aberto: boolean;
   valor_em_aberto: number;
-  /** Guia existe, mas o pagamento não foi confirmado. Fora do valor em aberto. */
+  /**
+   * Guia existe, mas o pagamento não foi confirmado; em DF, GO e MT, também a nota
+   * sem guia no portal (lá a guia é emitida no sistema da SEFAZ). Fora do valor em aberto.
+   */
   a_conferir: boolean;
   valor_a_conferir: number;
 }
