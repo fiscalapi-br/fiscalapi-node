@@ -153,12 +153,25 @@ export class FiscalAPI {
     return this.get('/api/consultar-cnd-todos', umDocumento(params, ['cpf', 'cnpj']));
   }
 
-  /** CND Federal — Receita Federal + PGFN (`GET /api/consultar-cnd-federal`). */
+  /**
+   * CND Federal — Receita Federal + PGFN (`GET /api/consultar-cnd-federal`).
+   * Para CPF, a Receita exige a data de nascimento do titular
+   * (`DD/MM/AAAA` ou `AAAA-MM-DD`).
+   */
   consultarCndFederal(
-    params: { emitirNova?: boolean } & Documento,
+    params: { emitirNova?: boolean } & (
+      | { cnpj: string; cpf?: never; dataNascimento?: never }
+      | { cpf: string; dataNascimento: string; cnpj?: never }
+    ),
   ): Promise<CertidaoFederalResponse> {
+    const doc = umDocumento(params, ['cpf', 'cnpj']);
+    const dataNascimento = params.dataNascimento?.trim();
+    if (doc.cpf && !dataNascimento) {
+      throw new Error('Informe dataNascimento: a CND Federal de CPF exige a data de nascimento.');
+    }
     return this.get('/api/consultar-cnd-federal', {
-      ...umDocumento(params, ['cpf', 'cnpj']),
+      ...doc,
+      data_nascimento: doc.cpf ? dataNascimento : undefined,
       emitir_nova: params.emitirNova || undefined,
     });
   }
