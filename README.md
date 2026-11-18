@@ -49,7 +49,7 @@ const { FiscalAPI } = require('fiscalapi-br');
 | `consultarCnpj({ cnpj, forceFresh? })` | `GET /api/consultar-cnpj` | Dados cadastrais da Receita Federal |
 | `consultarCnd({ uf, cpf \| cnpj })` | `GET /api/consultar-cnd` | CND estadual (ICMS) com PDF |
 | `consultarCndTodos({ cpf \| cnpj })` | `GET /api/consultar-cnd-todos` | CND estadual em todos os estados disponíveis |
-| `consultarCndFederal({ cpf \| cnpj, emitirNova? })` | `GET /api/consultar-cnd-federal` | CND Federal (Receita Federal + PGFN) |
+| `consultarCndFederal({ cnpj \| cpf + dataNascimento, emitirNova? })` | `GET /api/consultar-cnd-federal` | CND Federal (Receita Federal + PGFN) |
 | `consultarCndt({ cpf \| cnpj })` | `GET /api/consultar-cndt` | Certidão de débitos trabalhistas |
 | `consultarCrfFgts({ cpf \| cnpj })` | `GET /api/consultar-crf-fgts` | Regularidade do FGTS |
 | `consultarCertidoesTodas({ cpf \| cnpj, skipEstaduais? })` | `GET /api/certidoes-todas` | Todas as certidões em uma chamada |
@@ -120,6 +120,8 @@ if (cnd.result?.pdf_base64) {
 }
 
 const federal = await api.consultarCndFederal({ cnpj: '12345678000195' });
+// CPF: a Receita exige a data de nascimento (DD/MM/AAAA ou AAAA-MM-DD)
+const federalPf = await api.consultarCndFederal({ cpf: '12345678909', dataNascimento: '12/04/1985' });
 const trabalhista = await api.consultarCndt({ cnpj: '12345678000195' });
 const fgts = await api.consultarCrfFgts({ cnpj: '12345678000195' });
 ```
