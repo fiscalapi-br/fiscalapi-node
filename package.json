@@ -1,7 +1,7 @@
 {
   "name": "fiscalapi-br",
-  "version": "0.5.0",
-  "description": "SDK da FiscalAPI (Brasil): Inscrição Estadual, CNPJ, certidões, NF-e, CT-e, DIFAL, SIGEF, CNIR e perfil do produtor rural.",
+  "version": "0.6.0",
+  "description": "SDK da FiscalAPI (Brasil): Inscrição Estadual, CNPJ, certidões, NF-e, CT-e, Monitor de NF-e, DIFAL, SIGEF, CNIR e perfil do produtor rural.",
   "license": "MIT",
   "author": {
     "name": "FiscalAPI",
