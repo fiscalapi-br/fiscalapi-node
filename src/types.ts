@@ -477,3 +477,133 @@ export interface NfseResponse {
   aviso?: string | null;
   [extra: string]: unknown;
 }
+
+// ------------------------------------------------------- Monitor de NF-e
+
+/** Situação de uma NF-e no monitor. */
+export type StatusMonitorNfe =
+  | 'autorizada'
+  | 'autorizada_fora_prazo'
+  | 'denegada'
+  | 'cancelada'
+  | 'cancelada_fora_prazo'
+  | 'nao_encontrada'
+  | 'chave_divergente';
+
+/** Uma chave para monitorar, com a situação que você já conhece (padrão `autorizada`). */
+export interface ChaveParaMonitorar {
+  chave: string;
+  statusConhecido?: StatusMonitorNfe;
+}
+
+export interface ResultadoCadastroMonitor {
+  chave: string;
+  /** `aceita` (cobrada), `ja_monitorada` (sem nova cobrança) ou `invalida` (veja `motivo`). */
+  situacao: 'aceita' | 'ja_monitorada' | 'invalida';
+  /** Motivo da recusa: vazia, tamanho, caractere, dv, uf, data, modelo, tpemis, emitente, fora_do_prazo_sefaz... */
+  motivo?: string | null;
+  encerra_em?: string | null;
+}
+
+export interface CadastroMonitorResponse {
+  /** Um resultado por chave enviada, na mesma ordem. */
+  resultados: ResultadoCadastroMonitor[];
+  /** Chaves que entraram no monitor e foram cobradas. */
+  aceitas: number;
+  /** Valor cobrado nesta chamada, em reais (ex.: `"0,03"`). */
+  valor_cobrado: string;
+}
+
+export interface RemoverMonitorResponse {
+  removidas: number;
+  nao_encontradas: string[];
+}
+
+export interface EventoNfeMonitorada {
+  tipo: 'cancelamento' | 'carta_correcao' | 'epec' | 'outro';
+  /** Código do evento (ex.: `110111` para cancelamento). */
+  codigo: string;
+  sequencia: number;
+  protocolo?: string | null;
+  registrado_em?: string | null;
+  texto?: string | null;
+}
+
+export interface ChaveMonitorada {
+  chave: string;
+  /** Nulo até a primeira verificação. */
+  status: StatusMonitorNfe | null;
+  ativo: boolean;
+  criada_em: string;
+  encerra_em: string;
+  encerrada_em?: string | null;
+  motivo_encerramento?: string | null;
+  ultima_verificacao_em?: string | null;
+  proxima_verificacao_em?: string | null;
+  atualizada_em: string;
+  /** Avisos que o webhook não recebeu depois de todas as tentativas. */
+  entregas_falhas: number;
+}
+
+export interface EntregaFalhaMonitor {
+  id: string;
+  tipo: string;
+  criada_em: string;
+  tentativas: number;
+  ultimo_erro?: string | null;
+}
+
+export interface ChaveMonitoradaDetalhe extends ChaveMonitorada {
+  eventos: EventoNfeMonitorada[];
+  entregas_que_falharam: EntregaFalhaMonitor[];
+}
+
+export interface ListaChavesMonitoradas {
+  itens: ChaveMonitorada[];
+  /** Passe em `cursor` para a próxima página. Nulo na última. */
+  proximo_cursor: string | null;
+}
+
+export interface WebhookMonitorCriado {
+  url: string;
+  /** Segredo da assinatura. Mostrado só agora: guarde-o. */
+  segredo: string;
+}
+
+export interface WebhookMonitorAtual {
+  url: string;
+  /** Falso quando os avisos falharam por 3 dias seguidos. Cadastre de novo. */
+  ativo: boolean;
+  falhando_desde?: string | null;
+}
+
+export interface SegredoWebhookRotacionado {
+  segredo: string;
+  /** Até quando os avisos levam também a assinatura do segredo anterior. */
+  anterior_valido_ate: string;
+}
+
+export interface TesteWebhookEnfileirado {
+  id: string;
+  estado: 'pendente';
+}
+
+/** Corpo do aviso que a FiscalAPI envia ao seu webhook. */
+export interface AvisoMonitorNfe {
+  id: string;
+  tipo:
+    | 'nfe.status_alterado'
+    | 'nfe.evento_registrado'
+    | 'nfe.monitoramento_encerrado'
+    | 'teste';
+  ocorrido_em: string;
+  chave?: string | null;
+  status_anterior?: StatusMonitorNfe | null;
+  status_atual?: StatusMonitorNfe | null;
+  evento?: EventoNfeMonitorada | null;
+  monitoramento?: {
+    ativo: boolean;
+    encerra_em: string | null;
+    motivo_encerramento: string | null;
+  } | null;
+}

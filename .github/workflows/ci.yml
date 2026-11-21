@@ -20,6 +20,8 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm install --no-audit --no-fund
       - run: npm run build
+      - name: Testes (sem rede)
+        run: node --test test/monitor-nfe.test.mjs
       - name: Smoke test (ESM e CommonJS carregam sem rede)
         run: |
           node --input-type=module -e "import { FiscalAPI } from './dist/esm/index.js'; new FiscalAPI('x'); console.log('esm ok')"

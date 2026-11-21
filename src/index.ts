@@ -3,8 +3,21 @@ export {
   DEFAULT_BASE_URL,
   DEFAULT_MAX_RETRIES,
   DEFAULT_TIMEOUT_MS,
+  MONITOR_NFE_MAX_LOTE,
 } from './client.js';
-export type { Certificado, Documento, DocumentoIE, FiscalAPIOptions } from './client.js';
+export type {
+  Certificado,
+  Documento,
+  DocumentoIE,
+  FiscalAPIOptions,
+  ListarChavesMonitorNfeParams,
+} from './client.js';
+export {
+  verificarAssinaturaWebhook,
+  assinarAvisoWebhook,
+  TOLERANCIA_ASSINATURA_PADRAO,
+} from './webhook.js';
+export type { VerificarAssinaturaParams } from './webhook.js';
 export {
   FiscalAPIError,
   AuthenticationError,
