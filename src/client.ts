@@ -8,23 +8,34 @@ import {
   ServerError,
 } from './errors.js';
 import type {
+  CadastroMonitorResponse,
   CertidaoFederalResponse,
   CertidoesTodasResponse,
   CNDResponse,
   CNDTodosResponse,
   CnirResponse,
+  ChaveMonitorada,
+  ChaveMonitoradaDetalhe,
+  ChaveParaMonitorar,
   CNPJResponse,
   ConsultaIEResponse,
   ConsultaIETodosResponse,
   CteXmlResponse,
   DifalSaidaResponse,
+  ListaChavesMonitoradas,
   NfeXmlResponse,
   NfseResponse,
   PerfilProdutorResponse,
+  RemoverMonitorResponse,
+  SegredoWebhookRotacionado,
   SigefParcelaResponse,
   SigefResponse,
   SimplesNacionalResponse,
+  StatusMonitorNfe,
+  TesteWebhookEnfileirado,
   UfDifal,
+  WebhookMonitorAtual,
+  WebhookMonitorCriado,
 } from './types.js';
 import { VERSION } from './version.js';
 
@@ -64,7 +75,29 @@ export type DocumentoIE =
 /** Certificado A1: bytes do .pfx/.p12 ou o conteúdo já em base64. */
 export type Certificado = Uint8Array | ArrayBuffer | string;
 
-type QueryValue = string | boolean | undefined;
+type QueryValue = string | number | boolean | undefined;
+
+type Method = 'GET' | 'POST' | 'PUT' | 'DELETE';
+
+/** Até 1.000 chaves por chamada no Monitor de NF-e. */
+export const MONITOR_NFE_MAX_LOTE = 1000;
+
+/** Filtros da listagem do Monitor de NF-e. */
+export interface ListarChavesMonitorNfeParams {
+  /** Só notas nesta situação. */
+  status?: StatusMonitorNfe;
+  /** `true`: só monitoramentos correndo; `false`: só os encerrados. */
+  ativo?: boolean;
+  /**
+   * Só o que mudou a partir deste instante (o servidor volta 5 min: itens podem
+   * repetir; deduplique por `chave` + `atualizada_em`). Sem fuso = horário de Brasília.
+   */
+  alteradoDesde?: string | Date;
+  /** `proximo_cursor` da página anterior. */
+  cursor?: string;
+  /** Itens por página, de 1 a 1.000 (padrão do servidor: 100). */
+  limite?: number;
+}
 
 export class FiscalAPI {
   readonly baseUrl: string;
@@ -280,6 +313,122 @@ export class FiscalAPI {
     return this.get('/api/consultar-nfse', { chave, danfse: params.danfse || undefined });
   }
 
+
+  // -------------------------------------------------- Monitor de NF-e
+
+  /**
+   * Coloca até 1.000 chaves de NF-e no monitor (`POST /api/monitor-nfe/chaves`).
+   * Cada chave aceita é cobrada uma vez e acompanhada por até `prazoDias`
+   * (1 a 180, padrão 180). Chave já monitorada não é cobrada de novo; chave
+   * inválida volta com o motivo, sem cobrança. Sem saldo para todas as aceitas,
+   * a API responde 402 (`InsufficientBalanceError`) e nenhuma chave entra.
+   * Não é repetido automaticamente em 5xx.
+   */
+  cadastrarChavesMonitorNfe(params: {
+    /** Chaves (string) ou objetos com `statusConhecido` (padrão `autorizada`). */
+    chaves: Array<string | ChaveParaMonitorar>;
+    prazoDias?: number;
+  }): Promise<CadastroMonitorResponse> {
+    const chaves = lote(params.chaves).map((c) => {
+      const item = typeof c === 'string' ? { chave: c } : c;
+      const chave = chaveNfe(item.chave);
+      return item.statusConhecido
+        ? { chave, status_conhecido: item.statusConhecido }
+        : { chave };
+    });
+    const body: Record<string, unknown> = { chaves };
+    if (params.prazoDias !== undefined) {
+      const p = params.prazoDias;
+      if (!Number.isInteger(p) || p < 1 || p > 180) {
+        throw new Error('prazoDias deve ser um inteiro de 1 a 180.');
+      }
+      body.prazo_dias = p;
+    }
+    return this.request('POST', '/api/monitor-nfe/chaves', undefined, body);
+  }
+
+  /**
+   * Para de monitorar até 1.000 chaves (`POST /api/monitor-nfe/chaves/remover`).
+   * Sem estorno e sem aviso no webhook.
+   */
+  removerChavesMonitorNfe(params: { chaves: string[] }): Promise<RemoverMonitorResponse> {
+    const chaves = lote(params.chaves).map((c) => chaveNfe(c));
+    return this.request('POST', '/api/monitor-nfe/chaves/remover', undefined, { chaves });
+  }
+
+  /**
+   * Para de monitorar uma chave (`DELETE /api/monitor-nfe/chaves/{chave}`).
+   * Chave fora do monitor: `BadRequestError` com status 404.
+   */
+  async removerChaveMonitorNfe(params: { chave: string }): Promise<void> {
+    await this.request('DELETE', `/api/monitor-nfe/chaves/${chaveNfe(params.chave)}`);
+  }
+
+  /** Uma página das chaves monitoradas (`GET /api/monitor-nfe/chaves`). */
+  listarChavesMonitorNfe(params: ListarChavesMonitorNfeParams = {}): Promise<ListaChavesMonitoradas> {
+    return this.get('/api/monitor-nfe/chaves', queryListagem(params));
+  }
+
+  /**
+   * Percorre todas as páginas da listagem, seguindo `proximo_cursor`.
+   *
+   * ```ts
+   * for await (const item of api.iterarChavesMonitorNfe({ ativo: true })) { ... }
+   * ```
+   */
+  async *iterarChavesMonitorNfe(
+    params: Omit<ListarChavesMonitorNfeParams, 'cursor'> = {},
+  ): AsyncGenerator<ChaveMonitorada, void, undefined> {
+    let cursor: string | undefined;
+    do {
+      const pagina = await this.listarChavesMonitorNfe({ ...params, cursor });
+      for (const item of pagina.itens ?? []) yield item;
+      cursor = pagina.proximo_cursor ?? undefined;
+    } while (cursor);
+  }
+
+  /**
+   * Situação, eventos, próxima verificação e entregas que falharam de uma chave
+   * (`GET /api/monitor-nfe/chaves/{chave}`).
+   */
+  consultarChaveMonitorNfe(params: { chave: string }): Promise<ChaveMonitoradaDetalhe> {
+    return this.get(`/api/monitor-nfe/chaves/${chaveNfe(params.chave)}`, {});
+  }
+
+  /**
+   * Cadastra ou troca a URL do webhook (`PUT /api/monitor-nfe/webhook`).
+   * Só `https` na porta 443, com nome público. O `segredo` volta só aqui:
+   * guarde-o. Cadastrar de novo gera outro segredo e reativa o webhook.
+   */
+  cadastrarWebhookMonitorNfe(params: { url: string }): Promise<WebhookMonitorCriado> {
+    const url = (params.url ?? '').trim();
+    if (!url) throw new Error('Informe a URL do webhook.');
+    return this.request('PUT', '/api/monitor-nfe/webhook', undefined, { url });
+  }
+
+  /** URL cadastrada e se os avisos estão saindo (`GET /api/monitor-nfe/webhook`). */
+  consultarWebhookMonitorNfe(): Promise<WebhookMonitorAtual> {
+    return this.get('/api/monitor-nfe/webhook', {});
+  }
+
+  /** Remove o webhook (`DELETE /api/monitor-nfe/webhook`). O monitoramento continua. */
+  async removerWebhookMonitorNfe(): Promise<void> {
+    await this.request('DELETE', '/api/monitor-nfe/webhook');
+  }
+
+  /**
+   * Gera um segredo novo (`POST /api/monitor-nfe/webhook/rotacionar-segredo`).
+   * Por 24 h os avisos levam as duas assinaturas (`v1=nova,v1=anterior`).
+   */
+  rotacionarSegredoWebhookMonitorNfe(): Promise<SegredoWebhookRotacionado> {
+    return this.request('POST', '/api/monitor-nfe/webhook/rotacionar-segredo');
+  }
+
+  /** Enfileira um aviso `tipo: 'teste'` (`POST /api/monitor-nfe/webhook/teste`). */
+  testarWebhookMonitorNfe(): Promise<TesteWebhookEnfileirado> {
+    return this.request('POST', '/api/monitor-nfe/webhook/teste');
+  }
+
   // ------------------------------------------------------ Imóvel rural
 
   /** Parcelas certificadas no SIGEF/INCRA (`GET /api/consultar-sigef`). */
@@ -318,7 +467,7 @@ export class FiscalAPI {
   }
 
   private async request<T>(
-    method: 'GET' | 'POST',
+    method: Method,
     path: string,
     query?: Record<string, QueryValue>,
     body?: Record<string, unknown>,
@@ -416,10 +565,40 @@ function encodeQuery(query?: Record<string, QueryValue>): string {
   const sp = new URLSearchParams();
   for (const [k, v] of Object.entries(query)) {
     if (v === undefined) continue;
-    sp.append(k, typeof v === 'boolean' ? String(v) : v);
+    sp.append(k, String(v));
   }
   const s = sp.toString();
   return s ? `?${s}` : '';
+}
+
+function lote<T>(chaves: T[]): T[] {
+  if (!Array.isArray(chaves) || chaves.length === 0) throw new Error('Informe ao menos uma chave.');
+  if (chaves.length > MONITOR_NFE_MAX_LOTE) {
+    throw new Error(`Envie no máximo ${MONITOR_NFE_MAX_LOTE} chaves por chamada.`);
+  }
+  return chaves;
+}
+
+/** Chave de NF-e só com dígitos (tira pontos, espaços e o prefixo "NFe"). */
+function chaveNfe(chave: string): string {
+  const digitos = (chave ?? '').replace(/\D/g, '');
+  if (!digitos) throw new Error('Informe a chave de acesso.');
+  return digitos;
+}
+
+function queryListagem(params: ListarChavesMonitorNfeParams): Record<string, QueryValue> {
+  const { limite } = params;
+  if (limite !== undefined && (!Number.isInteger(limite) || limite < 1 || limite > 1000)) {
+    throw new Error('limite deve ser um inteiro de 1 a 1.000.');
+  }
+  const desde = params.alteradoDesde;
+  return {
+    status: params.status,
+    ativo: params.ativo,
+    alterado_desde: desde instanceof Date ? desde.toISOString() : desde || undefined,
+    cursor: params.cursor || undefined,
+    limite,
+  };
 }
 
 function certificadoBase64(cert: Certificado): string {

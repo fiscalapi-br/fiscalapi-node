@@ -1,6 +1,6 @@
 # FiscalAPI — SDK Node.js / TypeScript
 
-Cliente JavaScript/TypeScript da [FiscalAPI](https://fiscalapi.com.br): Inscrição Estadual nos 27 estados, CNPJ, certidões (CND estadual, CND Federal, CNDT, CRF/FGTS), XML de NF-e e de CT-e por chave, DIFAL de saída por UF, NFS-e por chave, Simples Nacional, SIGEF, CNIR e perfil do produtor rural.
+Cliente JavaScript/TypeScript da [FiscalAPI](https://fiscalapi.com.br): Inscrição Estadual nos 27 estados, CNPJ, certidões (CND estadual, CND Federal, CNDT, CRF/FGTS), XML de NF-e e de CT-e por chave, Monitor de NF-e por chave com webhook, DIFAL de saída por UF, NFS-e por chave, Simples Nacional, SIGEF, CNIR e perfil do produtor rural.
 
 - Zero dependências: usa o `fetch` nativo (Node 18+, Bun, Deno, edge runtimes).
 - Tipado em TypeScript, com ESM e CommonJS.
@@ -57,6 +57,11 @@ const { FiscalAPI } = require('fiscalapi-br');
 | `consultarNfse({ chave, danfse? })` | `GET /api/consultar-nfse` | NFS-e (padrão nacional) por chave, sem certificado |
 | `consultarNfeXml({ chave, certificado, senha, manifestar? })` | `POST /api/consultar-nfe-xml` | XML completo da NF-e |
 | `consultarCteXml({ chave, certificado, senha })` | `POST /api/consultar-cte-xml` | XML completo do CT-e |
+| `cadastrarChavesMonitorNfe({ chaves, prazoDias? })` | `POST /api/monitor-nfe/chaves` | Coloca até 1.000 chaves no Monitor de NF-e |
+| `removerChavesMonitorNfe({ chaves })` / `removerChaveMonitorNfe({ chave })` | `POST /api/monitor-nfe/chaves/remover` / `DELETE /api/monitor-nfe/chaves/{chave}` | Para de monitorar |
+| `listarChavesMonitorNfe({ status?, ativo?, alteradoDesde?, cursor?, limite? })` / `iterarChavesMonitorNfe(...)` | `GET /api/monitor-nfe/chaves` | Chaves monitoradas (uma página / todas) |
+| `consultarChaveMonitorNfe({ chave })` | `GET /api/monitor-nfe/chaves/{chave}` | Situação, eventos e entregas que falharam |
+| `cadastrarWebhookMonitorNfe({ url })`, `consultarWebhookMonitorNfe()`, `removerWebhookMonitorNfe()`, `rotacionarSegredoWebhookMonitorNfe()`, `testarWebhookMonitorNfe()` | `/api/monitor-nfe/webhook` | Webhook dos avisos |
 | `consultarDifalSaida({ certificado, senha, competencia, ufs? })` | `POST /api/consultar-difal-saida` | DIFAL de saída por UF de destino (Beta) |
 | `consultarSigef({ cpf \| cnpj })` | `GET /api/consultar-sigef` | Parcelas certificadas no SIGEF/INCRA |
 | `consultarSigefParcela({ uuid, forceFresh? })` | `GET /api/consultar-sigef-parcela` | Uma parcela com polígono, vértices e confrontantes |
@@ -167,6 +172,54 @@ if (cte.status === 'ok' && cte.xml) {
 
 Aceita CT-e (modelo 57), CT-e OS (67) e GTV-e (64). O certificado A1 precisa ser de um participante do documento (emitente, tomador, remetente, destinatário, expedidor ou recebedor) e **não é armazenado** pela API. Só há cobrança quando o XML é devolvido.
 
+### Monitor de NF-e por chave
+
+Cadastre as chaves e a FiscalAPI acompanha cada nota na SEFAZ por até 180 dias. Quando a nota é cancelada, denegada ou recebe um evento (carta de correção, por exemplo), chega um aviso no seu webhook. Sem certificado.
+
+```ts
+// 1. Webhook (uma vez). Guarde o segredo: ele só volta aqui.
+const { segredo } = await api.cadastrarWebhookMonitorNfe({ url: 'https://seu-sistema.com/fiscalapi/avisos' });
+
+// 2. Chaves: até 1.000 por chamada
+const r = await api.cadastrarChavesMonitorNfe({
+  chaves: ['35261111222333000181550010000001231123456787'],
+  prazoDias: 180, // opcional, de 1 a 180
+});
+console.log(r.aceitas, r.valor_cobrado);
+for (const item of r.resultados.filter((x) => x.situacao === 'invalida')) console.log(item.chave, item.motivo);
+
+// 3. Consultar e listar
+const nota = await api.consultarChaveMonitorNfe({ chave: '35261111222333000181550010000001231123456787' });
+for await (const item of api.iterarChavesMonitorNfe({ alteradoDesde: '2026-11-21T00:00:00-03:00' })) {
+  console.log(item.chave, item.status, item.entregas_falhas);
+}
+```
+
+Cobra uma vez por chave aceita. Chave já monitorada não é cobrada de novo; chave inválida volta com `motivo` e não é cobrada. Sem saldo para todas, `402` e nenhuma entra.
+
+**Receber o aviso.** Confira a assinatura com o corpo **bruto** (antes do `JSON.parse`):
+
+```ts
+import express from 'express';
+import { verificarAssinaturaWebhook } from 'fiscalapi-br';
+
+app.post('/fiscalapi/avisos', express.raw({ type: 'application/json' }), async (req, res) => {
+  const ok = await verificarAssinaturaWebhook({
+    corpo: req.body, // Buffer com os bytes recebidos
+    assinatura: req.get('X-FiscalAPI-Assinatura'),
+    timestamp: req.get('X-FiscalAPI-Timestamp'),
+    segredo: process.env.FISCALAPI_WEBHOOK_SEGREDO!,
+    // tolerancia: 300 (padrão, em segundos)
+  });
+  if (!ok) return res.sendStatus(401);
+  const aviso = JSON.parse(req.body.toString('utf8'));
+  // deduplique por aviso.id: a entrega é "pelo menos uma vez"
+  res.sendStatus(200); // responda 2xx em até 10 s
+});
+```
+
+A assinatura é `v1=` + HMAC-SHA256 do segredo inteiro (`whsec_...`) sobre `"{timestamp}." + corpo`. Depois de `rotacionarSegredoWebhookMonitorNfe()`, o cabeçalho traz `v1=nova,v1=anterior` por 24 h: o helper aceita qualquer uma. Tipos de aviso: `nfe.status_alterado`, `nfe.evento_registrado`, `nfe.monitoramento_encerrado` e `teste`. Detalhes: [documentação](https://docs.fiscalapi.com.br).
+
 ### DIFAL de saída por UF de destino (Beta)
 
 ```ts
@@ -246,7 +299,7 @@ const api = new FiscalAPI('sua-chave', { timeoutMs: 200_000, maxRetries: 3 });
 ```
 
 - `429`: o SDK espera o tempo do cabeçalho `Retry-After` e tenta de novo.
-- `500`, `502`, `503`, `504` e falhas de rede: novas tentativas com espera exponencial, **só em consultas GET**. A consulta de NF-e (POST) não é repetida automaticamente.
+- `500`, `502`, `503`, `504` e falhas de rede: novas tentativas com espera exponencial, **só em consultas GET**. POST, PUT e DELETE (NF-e, cadastro no monitor, webhook) não são repetidos automaticamente.
 - Algumas consultas (NF-e, SIGEF) podem levar até 3 minutos; o timeout padrão é 200 s.
 
 ## Links
