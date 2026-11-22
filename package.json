@@ -1,7 +1,7 @@
 {
   "name": "fiscalapi-br",
   "version": "0.6.0",
-  "description": "SDK da FiscalAPI (Brasil): Inscrição Estadual, CNPJ, certidões, NF-e, CT-e, Monitor de NF-e, DIFAL, SIGEF, CNIR e perfil do produtor rural.",
+  "description": "SDK da FiscalAPI (Brasil): Inscrição Estadual, CNPJ, certidões, NF-e, CT-e, Monitor de NF-e, emissão de NFS-e, DIFAL, SIGEF, CNIR e perfil do produtor rural.",
   "license": "MIT",
   "author": {
     "name": "FiscalAPI",
@@ -24,6 +24,7 @@
     "cnd",
     "certidao",
     "nfe",
+    "nfse",
     "difal",
     "sigef",
     "cnir",
@@ -61,7 +62,7 @@
     "build": "npm run clean && tsc -p tsconfig.esm.json && tsc -p tsconfig.cjs.json && node -e \"require('fs').writeFileSync('dist/cjs/package.json', JSON.stringify({type:'commonjs'}))\"",
     "typecheck": "tsc -p tsconfig.esm.json --noEmit",
     "prepublishOnly": "npm run build",
-    "test": "npm run build && node --test test/monitor-nfe.test.mjs"
+    "test": "npm run build && node --test test/monitor-nfe.test.mjs test/emissao-nfse.test.mjs"
   },
   "devDependencies": {
     "typescript": "5.9.3"

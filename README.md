@@ -1,6 +1,6 @@
 # FiscalAPI — SDK Node.js / TypeScript
 
-Cliente JavaScript/TypeScript da [FiscalAPI](https://fiscalapi.com.br): Inscrição Estadual nos 27 estados, CNPJ, certidões (CND estadual, CND Federal, CNDT, CRF/FGTS), XML de NF-e e de CT-e por chave, Monitor de NF-e por chave com webhook, DIFAL de saída por UF, NFS-e por chave, Simples Nacional, SIGEF, CNIR e perfil do produtor rural.
+Cliente JavaScript/TypeScript da [FiscalAPI](https://fiscalapi.com.br): Inscrição Estadual nos 27 estados, CNPJ, certidões (CND estadual, CND Federal, CNDT, CRF/FGTS), XML de NF-e e de CT-e por chave, Monitor de NF-e por chave com webhook, emissão de NFS-e Nacional, DIFAL de saída por UF, NFS-e por chave, Simples Nacional, SIGEF, CNIR e perfil do produtor rural.
 
 - Zero dependências: usa o `fetch` nativo (Node 18+, Bun, Deno, edge runtimes).
 - Tipado em TypeScript, com ESM e CommonJS.
@@ -62,6 +62,13 @@ const { FiscalAPI } = require('fiscalapi-br');
 | `listarChavesMonitorNfe({ status?, ativo?, alteradoDesde?, cursor?, limite? })` / `iterarChavesMonitorNfe(...)` | `GET /api/monitor-nfe/chaves` | Chaves monitoradas (uma página / todas) |
 | `consultarChaveMonitorNfe({ chave })` | `GET /api/monitor-nfe/chaves/{chave}` | Situação, eventos e entregas que falharam |
 | `cadastrarWebhookMonitorNfe({ url })`, `consultarWebhookMonitorNfe()`, `removerWebhookMonitorNfe()`, `rotacionarSegredoWebhookMonitorNfe()`, `testarWebhookMonitorNfe()` | `/api/monitor-nfe/webhook` | Webhook dos avisos |
+| `criarEmpresaNfse(empresa)`, `listarEmpresasNfse()`, `obterEmpresaNfse({ empresaId })`, `atualizarEmpresaNfse({ empresaId, mudancas })` | `/api/nfse/empresas` | Empresas emissoras de NFS-e |
+| `enviarCertificadoNfse({ certificado, senha })` / `excluirCertificadoNfse({ raiz })` | `PUT /api/nfse/certificados` / `DELETE /api/nfse/certificados/{raiz}` | Certificado A1 da empresa (multipart) |
+| `emitirNfse(nota, { idempotencyKey? })` | `POST /api/nfse/notas` | Emite NFS-e (assíncrono, `202`) |
+| `obterNfse({ notaId })`, `listarNfse({ status?, ambiente?, referencia?, atualizadaDesde?, cursor?, limite? })` / `iterarNfse(...)` | `GET /api/nfse/notas` | NFS-e emitidas (uma / uma página / todas) |
+| `cancelarNfse({ notaId, motivo, justificativa })`, `substituirNfse({ notaId, substituicao })` | `POST /api/nfse/notas/{id}/cancelamento` e `/substituicao` | Cancela ou substitui |
+| `baixarXmlNfse({ notaId })` / `baixarPdfNfse({ notaId })` | `GET /api/nfse/notas/{id}/xml` e `/pdf` | XML autorizado (string) e DANFSe (bytes) |
+| `configurarWebhookNfse({ url })`, `obterWebhookNfse()`, `removerWebhookNfse()`, `reenviarWebhookNfse({ notaId })` | `/api/nfse/webhook` | Webhook da emissão |
 | `consultarDifalSaida({ certificado, senha, competencia, ufs? })` | `POST /api/consultar-difal-saida` | DIFAL de saída por UF de destino (Beta) |
 | `consultarSigef({ cpf \| cnpj })` | `GET /api/consultar-sigef` | Parcelas certificadas no SIGEF/INCRA |
 | `consultarSigefParcela({ uuid, forceFresh? })` | `GET /api/consultar-sigef-parcela` | Uma parcela com polígono, vértices e confrontantes |
@@ -220,6 +227,101 @@ app.post('/fiscalapi/avisos', express.raw({ type: 'application/json' }), async (
 
 A assinatura é `v1=` + HMAC-SHA256 do segredo inteiro (`whsec_...`) sobre `"{timestamp}." + corpo`. Depois de `rotacionarSegredoWebhookMonitorNfe()`, o cabeçalho traz `v1=nova,v1=anterior` por 24 h: o helper aceita qualquer uma. Tipos de aviso: `nfe.status_alterado`, `nfe.evento_registrado`, `nfe.monitoramento_encerrado` e `teste`. Detalhes: [documentação](https://docs.fiscalapi.com.br).
 
+### Emissão de NFS-e Nacional
+
+Emita a NFS-e do padrão nacional pela sua empresa, assinada com o certificado A1 dela. A nota é processada em segundos e o resultado chega por webhook. Homologação é grátis (1.000 notas por mês); em produção, só a nota autorizada é cobrada.
+
+**Primeira nota (homologação):**
+
+```ts
+import { readFile, writeFile } from 'node:fs/promises';
+import { FiscalAPI } from 'fiscalapi-br';
+
+const api = new FiscalAPI(process.env.FISCALAPI_API_KEY!);
+
+// 1. Certificado A1 (e-CNPJ ICP-Brasil) da empresa, uma vez
+await api.enviarCertificadoNfse({
+  certificado: await readFile('empresa.pfx'),
+  senha: process.env.SENHA_CERTIFICADO,
+});
+
+// 2. Empresa emissora (fictícia: troque pelos dados da sua)
+const empresa = await api.criarEmpresaNfse({
+  cnpj: '11.222.333/0001-81',
+  razao_social: 'Exemplo Servicos de Tecnologia Ltda',
+  im: '123456',
+  cod_mun_ibge: '4106902', // Curitiba
+  regime: { op_simp_nac: 3, reg_ap_trib_sn: 1 }, // ME/EPP do Simples
+  serie: '00001',
+});
+
+// 3. Webhook (opcional). O segredo só volta no primeiro cadastro: guarde-o.
+const { segredo } = await api.configurarWebhookNfse({ url: 'https://seu-sistema.com.br/webhooks/nfse' });
+
+// 4. Emita
+const nota = await api.emitirNfse({
+  empresa_id: empresa.id,
+  ambiente: 'homologacao',
+  referencia: 'teste-0001', // o seu id do pedido; obrigatório em produção
+  preset: 'simples_servico',
+  competencia: '2026-11-22',
+  tomador: { tipo: 'cnpj', documento: '12.345.678/0001-95', nome: 'Cliente Exemplo Comercio Ltda' },
+  servico: {
+    codigo_tributacao_nacional: '01.07.01',
+    descricao: 'Suporte técnico em informática, novembro de 2026',
+  },
+  valores: { valor_servico: '1500.00', percentual_tributos_aproximado: '6.00' },
+});
+console.log(nota.id, nota.status); // "pendente"; avisos em nota.avisos
+
+// 5. Sem webhook, consulte
+const atual = await api.obterNfse({ notaId: nota.id });
+if (atual.status === 'autorizada') {
+  await writeFile('danfse.pdf', await api.baixarPdfNfse({ notaId: nota.id }));
+  await writeFile('nfse.xml', await api.baixarXmlNfse({ notaId: nota.id }), 'utf8');
+} else if (atual.status === 'rejeitada') {
+  console.log(atual.erros); // [{ codigo, descricao }]
+}
+```
+
+Para produção, troque `ambiente` para `'producao'` e mande sempre a `referencia` (ou `{ idempotencyKey }` no segundo argumento): repetir o mesmo pedido devolve a nota que já existe, sem emitir outra. Com ela, o SDK também repete a chamada em falha de rede e `5xx`. Sem nenhuma das duas, `emitirNfse` em produção lança erro antes de chamar a API.
+
+**Cancelar, substituir e sincronizar:**
+
+```ts
+await api.cancelarNfse({ notaId, motivo: 1, justificativa: 'Valor do serviço informado errado na nota.' });
+
+const nova = await api.substituirNfse({
+  notaId,
+  substituicao: { referencia: 'pedido-1001-v2', motivo: '99', justificativa: 'Descrição corrigida a pedido do cliente.',
+    competencia: '2026-11-20', tomador, servico, valores: { ...valores, iss: { tributacao: 1 } } },
+});
+
+for await (const n of api.iterarNfse({ ambiente: 'producao', atualizadaDesde: ultimoUpdatedAt })) {
+  // trate repetidos pelo id
+}
+```
+
+**Receber o aviso.** O webhook da emissão usa o mesmo esquema de assinatura do Monitor de NF-e, e o mesmo helper serve:
+
+```ts
+app.post('/webhooks/nfse', express.raw({ type: 'application/json' }), async (req, res) => {
+  const ok = await verificarAssinaturaWebhook({
+    corpo: req.body, // Buffer com os bytes recebidos
+    assinatura: req.get('X-FiscalAPI-Assinatura'),
+    timestamp: req.get('X-FiscalAPI-Timestamp'),
+    segredo: process.env.FISCALAPI_NFSE_WEBHOOK_SEGREDO!,
+  });
+  if (!ok) return res.sendStatus(401);
+  const aviso: AvisoWebhookNfse = JSON.parse(req.body.toString('utf8'));
+  // aviso.evento: autorizada, rejeitada, cancelada, substituida ou cancelamento_recusado
+  // deduplique por X-FiscalAPI-Entrega + aviso.updated_at; filtre por aviso.ambiente
+  res.sendStatus(204); // responda 2xx em até 10 s
+});
+```
+
+Erros da API chegam com o código em `err.code` (ex.: `NFSE_DADOS_INVALIDOS`, com a lista em `err.body.erros`; `NFSE_REFERENCIA_EM_USO`; `NFSE_TERMOS_PENDENTES`). Campos, presets, IBS/CBS e a tabela de erros: [documentação da emissão](https://docs.fiscalapi.com.br/docs/emissao-nfse/visao-geral).
+
 ### DIFAL de saída por UF de destino (Beta)
 
 ```ts
@@ -298,8 +400,8 @@ try {
 const api = new FiscalAPI('sua-chave', { timeoutMs: 200_000, maxRetries: 3 });
 ```
 
-- `429`: o SDK espera o tempo do cabeçalho `Retry-After` e tenta de novo.
-- `500`, `502`, `503`, `504` e falhas de rede: novas tentativas com espera exponencial, **só em consultas GET**. POST, PUT e DELETE (NF-e, cadastro no monitor, webhook) não são repetidos automaticamente.
+- `429`: o SDK espera o tempo do cabeçalho `Retry-After` e tenta de novo (menos `NFSE_HOMOLOG_LIMITE`, o limite mensal de homologação).
+- `500`, `502`, `503`, `504` e falhas de rede: novas tentativas com espera exponencial, **só em consultas GET**. POST, PUT, PATCH e DELETE (NF-e, cadastro no monitor, webhook) não são repetidos automaticamente; a exceção é `emitirNfse` e `substituirNfse` com `referencia` ou `idempotencyKey`, que a API trata sem duplicar.
 - Algumas consultas (NF-e, SIGEF) podem levar até 3 minutos; o timeout padrão é 200 s.
 
 ## Links

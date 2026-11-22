@@ -607,3 +607,313 @@ export interface AvisoMonitorNfe {
     motivo_encerramento: string | null;
   } | null;
 }
+
+// ------------------------------------------------------ Emissão de NFS-e
+
+/** Ambiente da nota: `homologacao` (sem valor fiscal, grátis) ou `producao`. */
+export type AmbienteNfse = 'homologacao' | 'producao';
+
+/** Situação de uma NFS-e emitida pela API. */
+export type StatusNotaNfse =
+  | 'pendente'
+  | 'processando'
+  | 'autorizada'
+  | 'rejeitada'
+  | 'cancelando'
+  | 'cancelada'
+  | 'substituida';
+
+/** Eventos que o webhook da emissão envia. */
+export type EventoWebhookNfse =
+  | 'autorizada'
+  | 'rejeitada'
+  | 'cancelada'
+  | 'substituida'
+  | 'cancelamento_recusado';
+
+/** Cenário pronto que preenche os campos fixos da nota. */
+export type PresetNfse = 'simples_servico' | 'regime_normal_servico' | 'locacao_bem_movel';
+
+/** Valor decimal. Prefira texto (`"1500.00"`) para não perder casas. */
+export type DecimalNfse = string | number;
+
+/** Regime tributário do prestador. */
+export interface RegimeNfse {
+  /** `1` não optante, `2` MEI, `3` ME/EPP do Simples Nacional. */
+  op_simp_nac: 1 | 2 | 3;
+  /** Só para ME/EPP, e obrigatório nele: `1`, `2` ou `3`. */
+  reg_ap_trib_sn?: 1 | 2 | 3 | null;
+  /** Regime especial (padrão `0`, nenhum). */
+  reg_esp_trib?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 9;
+  /** Regime de apuração do IBS/CBS do optante do Simples. */
+  reg_ap_ibscbs_sn?: 1 | 2 | 3 | null;
+}
+
+/** Corpo do cadastro da empresa emissora (`POST /api/nfse/empresas`). */
+export interface EmpresaNfseIn {
+  /** CNPJ, com ou sem pontuação. */
+  cnpj: string;
+  razao_social: string;
+  /** Inscrição municipal, se houver. */
+  im?: string | null;
+  /** Município do estabelecimento (IBGE, 7 dígitos). */
+  cod_mun_ibge: string;
+  regime: RegimeNfse;
+  /** Série da DPS, de `00001` a `49999`. */
+  serie: string;
+  /** Primeiro número de DPS em produção (padrão 1), para continuar uma numeração. */
+  primeiro_ndps_producao?: number | null;
+  /** Só `certificado` (padrão). */
+  auth_modo?: 'certificado';
+  /** Omitido: vale o certificado da raiz do CNPJ. */
+  certificado_id?: string | null;
+}
+
+/**
+ * Edição da empresa (`PATCH /api/nfse/empresas/{id}`): mande só o que muda.
+ * CNPJ, série, numeração, `auth_modo` e `certificado_id` não mudam.
+ * `{ ativa: false }` desliga a empresa; `{ ativa: true }` religa.
+ */
+export interface EmpresaNfsePatch {
+  razao_social?: string;
+  im?: string | null;
+  cod_mun_ibge?: string;
+  /** Muda campo a campo; `op_simp_nac` vai sempre que `regime` for enviado. */
+  regime?: RegimeNfse;
+  ativa?: boolean;
+}
+
+/** Ponto de atenção que não impede o cadastro nem a emissão. */
+export interface AvisoValidacaoNfse {
+  codigo?: string;
+  campo?: string;
+  mensagem?: string;
+  [extra: string]: unknown;
+}
+
+export interface EmpresaNfse {
+  id: string;
+  cnpj: string;
+  razao_social: string;
+  im: string | null;
+  cod_mun_ibge: string;
+  regime: {
+    op_simp_nac: number;
+    reg_ap_trib_sn: number | null;
+    reg_esp_trib: number;
+    reg_ap_ibscbs_sn: number | null;
+  };
+  auth_modo: string;
+  certificado_id: string | null;
+  serie: string;
+  proximo_ndps_producao: number;
+  proximo_ndps_homologacao: number;
+  ativa: boolean;
+  /** Posse do CNPJ conferida pelo certificado. Só empresa verificada emite em produção. */
+  verificada: boolean;
+  verificada_em: string | null;
+  /** Município conveniado ao padrão nacional (`null`: não deu para confirmar). */
+  convenio_ok: boolean | null;
+  /** `MUNICIPIO_SEM_CONVENIO` ou `CONVENIO_NAO_CONFIRMADO`. */
+  avisos: AvisoValidacaoNfse[];
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+/** Metadados do certificado A1 guardado. O arquivo e a senha nunca voltam. */
+export interface CertificadoNfse {
+  id: string;
+  /** Raiz do CNPJ do titular (8 caracteres). */
+  cnpj_raiz: string;
+  titular_cnpj: string;
+  /** SHA-256 do certificado. */
+  fingerprint: string;
+  valido_ate: string;
+  created_at: string | null;
+}
+
+export interface EnderecoNacionalNfse {
+  /** 8 dígitos, da UF do município. */
+  cep: string;
+  cod_mun_ibge: string;
+  logradouro: string;
+  numero?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+}
+
+export interface EnderecoExteriorNfse {
+  /** ISO, 2 letras. */
+  cod_pais: string;
+  cod_postal: string;
+  cidade: string;
+  estado_provincia: string;
+  logradouro: string;
+  numero?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+}
+
+export interface TomadorNfse {
+  tipo: 'cpf' | 'cnpj' | 'estrangeiro' | 'nao_identificado';
+  /** CPF ou CNPJ, com ou sem pontuação. Obrigatório para `cpf` e `cnpj`. */
+  documento?: string | null;
+  /** Obrigatório, menos em `nao_identificado`. */
+  nome?: string | null;
+  email?: string | null;
+  endereco?: EnderecoNacionalNfse | null;
+  /** Obrigatório para `estrangeiro`. */
+  endereco_ext?: EnderecoExteriorNfse | null;
+  /** Estrangeiro: `nif` ou `motivo_sem_nif` (um dos dois). */
+  nif?: string | null;
+  /** `1` dispensado, `2` não exigido. */
+  motivo_sem_nif?: 1 | 2 | null;
+}
+
+export interface DestinatarioNfse {
+  tipo: 'cpf' | 'cnpj';
+  documento: string;
+  nome: string;
+  endereco: EnderecoNacionalNfse;
+}
+
+export interface ServicoNfse {
+  /** Lista nacional, 6 dígitos, com ou sem pontos (`01.07.01`). */
+  codigo_tributacao_nacional: string;
+  /** Até 2.000 caracteres; aceita quebra de linha. */
+  descricao: string;
+  codigo_nbs?: string | null;
+  codigo_atividade_sn?: string | null;
+  /** Omitido: o município da empresa. */
+  cod_mun_prestacao?: string | null;
+}
+
+export interface IssNfse {
+  /** `1` tributável, `4` não incidência. */
+  tributacao: 1 | 2 | 3 | 4;
+  retido?: boolean;
+  /** Alíquota em %, até 2 casas. */
+  aliquota?: DecimalNfse | null;
+}
+
+export interface ValoresNfse {
+  valor_servico: DecimalNfse;
+  desconto_incondicionado?: DecimalNfse;
+  iss?: IssNfse | null;
+  /** Obrigatório para ME/EPP do Simples. */
+  percentual_tributos_aproximado?: DecimalNfse | null;
+  /** Obrigatório para não optante. */
+  tributos_aproximados?: {
+    federal: DecimalNfse;
+    estadual: DecimalNfse;
+    municipal: DecimalNfse;
+  } | null;
+}
+
+export interface IbsCbsNfse {
+  cclass_trib?: string | null;
+  cst?: string | null;
+  cind_op?: string | null;
+  ind_final?: 0 | 1 | null;
+  tp_oper?: number | null;
+}
+
+export interface BemMovelNfse {
+  ncm: string;
+  descricao: string;
+  quantidade: number;
+}
+
+/** Dados da nota, comuns à emissão e à substituição. */
+export interface DadosNotaNfse {
+  /** `AAAA-MM-DD`. */
+  competencia: string;
+  tomador: TomadorNfse;
+  destinatario?: DestinatarioNfse | null;
+  servico: ServicoNfse;
+  valores: ValoresNfse;
+  ibs_cbs?: IbsCbsNfse | null;
+  bens_moveis?: BemMovelNfse[];
+  /** De 1 a 20 letras ou números. */
+  codigo_interno?: string | null;
+}
+
+/** Corpo de `POST /api/nfse/notas`. */
+export interface NotaNfseIn extends DadosNotaNfse {
+  empresa_id: string;
+  ambiente: AmbienteNfse;
+  /**
+   * O seu id da nota (pedido, venda), até 50 caracteres. Obrigatório em
+   * produção (ou use `idempotencyKey`). Garante que o mesmo pedido não vira duas notas.
+   */
+  referencia?: string | null;
+  preset?: PresetNfse | null;
+}
+
+/** Corpo de `POST /api/nfse/notas/{id}/substituicao`. Empresa e ambiente vêm da original. */
+export interface SubstituicaoNfseIn extends DadosNotaNfse {
+  /** Referência da nota NOVA. Obrigatória em produção (ou use `idempotencyKey`). */
+  referencia?: string | null;
+  /** `01` a `05` ou `99` (outros). */
+  motivo: '01' | '02' | '03' | '04' | '05' | '99';
+  /** De 15 a 255 caracteres. Obrigatória com motivo `99`. */
+  justificativa?: string | null;
+}
+
+/** Motivo de rejeição (ou de recusa do cancelamento). */
+export interface ErroNotaNfse {
+  codigo?: string;
+  descricao?: string;
+  [extra: string]: unknown;
+}
+
+export interface NotaNfse {
+  id: string;
+  status: StatusNotaNfse;
+  ambiente: AmbienteNfse;
+  referencia: string | null;
+  empresa_id: string;
+  dps_id: string;
+  /** 50 dígitos, depois de autorizada. */
+  chave_acesso: string | null;
+  numero_nfse: string | null;
+  erros: ErroNotaNfse[] | null;
+  /** O primeiro código de `erros`. */
+  erro_codigo: string | null;
+  avisos: AvisoValidacaoNfse[];
+  autorizada_em: string | null;
+  cancelada_em: string | null;
+  substitui_id: string | null;
+  substituida_por_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface PaginaNotasNfse {
+  itens: NotaNfse[];
+  /** Cursor da próxima página; `null` no fim. */
+  proximo: string | null;
+}
+
+export interface WebhookNfse {
+  url: string | null;
+  ativo: boolean;
+  /** Últimos 4 caracteres do segredo, para conferir qual está em uso. */
+  segredo_final: string | null;
+  eventos: EventoWebhookNfse[];
+}
+
+export interface WebhookNfseConfigurado extends WebhookNfse {
+  /** Segredo do HMAC. Só no primeiro cadastro: guarde-o. `null` ao trocar a URL. */
+  segredo: string | null;
+}
+
+export interface ReenvioWebhookNfse {
+  /** Avisos postos de novo na fila (`0`: não havia aviso para mandar). */
+  reenfileiradas: number;
+}
+
+/** Corpo do aviso que o webhook da emissão recebe: a nota no momento do evento. */
+export interface AvisoWebhookNfse extends NotaNfse {
+  evento: EventoWebhookNfse;
+}

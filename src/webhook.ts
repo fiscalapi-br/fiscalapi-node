@@ -1,5 +1,6 @@
 /**
- * Verificação da assinatura dos avisos do Monitor de NF-e.
+ * Verificação da assinatura dos avisos do Monitor de NF-e e da Emissão de
+ * NFS-e (o esquema é o mesmo nos dois produtos).
  *
  * Cada aviso chega com `X-FiscalAPI-Timestamp` (segundos Unix) e
  * `X-FiscalAPI-Assinatura: v1=<hex>`, onde `hex = HMAC-SHA256(segredo,
@@ -86,9 +87,10 @@ export async function assinarAvisoWebhook(
 }
 
 /**
- * Confere se um aviso do Monitor de NF-e veio da FiscalAPI.
+ * Confere se um aviso do Monitor de NF-e ou da Emissão de NFS-e veio da FiscalAPI.
  * Devolve `true` só se alguma assinatura `v1=` bater e o timestamp estiver
- * dentro da tolerância. Depois de verificar, deduplique pelo `id` do corpo.
+ * dentro da tolerância. Depois de verificar, deduplique: no monitor, pelo `id`
+ * do corpo; na emissão, por `X-FiscalAPI-Entrega` + `updated_at`.
  */
 export async function verificarAssinaturaWebhook(
   params: VerificarAssinaturaParams,

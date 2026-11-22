@@ -8,6 +8,19 @@ import {
   ServerError,
 } from './errors.js';
 import type {
+  AmbienteNfse,
+  CertificadoNfse,
+  EmpresaNfse,
+  EmpresaNfseIn,
+  EmpresaNfsePatch,
+  NotaNfse,
+  NotaNfseIn,
+  PaginaNotasNfse,
+  ReenvioWebhookNfse,
+  StatusNotaNfse,
+  SubstituicaoNfseIn,
+  WebhookNfse,
+  WebhookNfseConfigurado,
   CadastroMonitorResponse,
   CertidaoFederalResponse,
   CertidoesTodasResponse,
@@ -77,10 +90,40 @@ export type Certificado = Uint8Array | ArrayBuffer | string;
 
 type QueryValue = string | number | boolean | undefined;
 
-type Method = 'GET' | 'POST' | 'PUT' | 'DELETE';
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+interface RequestOptions {
+  query?: Record<string, QueryValue>;
+  body?: Record<string, unknown>;
+  form?: FormData;
+  headers?: Record<string, string>;
+  /** Devolve os bytes da resposta (XML, PDF) em vez do JSON. */
+  binary?: boolean;
+  /** Repete em 5xx e falha de rede (GET sempre; POST só com chave de idempotência). */
+  idempotent?: boolean;
+}
 
 /** Até 1.000 chaves por chamada no Monitor de NF-e. */
 export const MONITOR_NFE_MAX_LOTE = 1000;
+
+const NFSE = '/api/nfse';
+
+/** Filtros da listagem de NFS-e emitidas. */
+export interface ListarNotasNfseParams {
+  status?: StatusNotaNfse;
+  ambiente?: AmbienteNfse;
+  /** Busca pela sua referência. */
+  referencia?: string;
+  /**
+   * Só notas com `updated_at` igual ou posterior (ISO 8601). A nota do próprio
+   * instante volta de novo: trate a repetição pelo `id`.
+   */
+  atualizadaDesde?: string | Date;
+  /** `proximo` da página anterior. */
+  cursor?: string;
+  /** Notas por página, de 1 a 100 (padrão do servidor: 50). */
+  limite?: number;
+}
 
 /** Filtros da listagem do Monitor de NF-e. */
 export interface ListarChavesMonitorNfeParams {
@@ -429,6 +472,220 @@ export class FiscalAPI {
     return this.request('POST', '/api/monitor-nfe/webhook/teste');
   }
 
+  // ------------------------------------------------- Emissão de NFS-e
+
+  /**
+   * Cadastra a empresa emissora (`POST /api/nfse/empresas`). Envie antes o
+   * certificado A1 da mesma raiz do CNPJ (`enviarCertificadoNfse`).
+   */
+  criarEmpresaNfse(empresa: EmpresaNfseIn): Promise<EmpresaNfse> {
+    if (!empresa || typeof empresa !== 'object') throw new Error('Informe os dados da empresa.');
+    return this.send('POST', `${NFSE}/empresas`, { body: { ...empresa } });
+  }
+
+  /** Empresas emissoras da conta, ativas e desativadas (`GET /api/nfse/empresas`). */
+  listarEmpresasNfse(): Promise<EmpresaNfse[]> {
+    return this.send('GET', `${NFSE}/empresas`);
+  }
+
+  /** Uma empresa emissora (`GET /api/nfse/empresas/{empresaId}`). */
+  obterEmpresaNfse(params: { empresaId: string }): Promise<EmpresaNfse> {
+    return this.send('GET', `${NFSE}/empresas/${id(params.empresaId, 'empresaId')}`);
+  }
+
+  /**
+   * Edita a empresa (`PATCH /api/nfse/empresas/{empresaId}`): mande só o que muda.
+   * `{ ativa: false }` desliga a empresa; `{ ativa: true }` religa.
+   */
+  atualizarEmpresaNfse(params: { empresaId: string; mudancas: EmpresaNfsePatch }): Promise<EmpresaNfse> {
+    const mudancas = params.mudancas;
+    if (!mudancas || typeof mudancas !== 'object' || !Object.keys(mudancas).length) {
+      throw new Error('Informe ao menos um campo em mudancas.');
+    }
+    return this.send('PATCH', `${NFSE}/empresas/${id(params.empresaId, 'empresaId')}`, {
+      body: { ...mudancas },
+    });
+  }
+
+  /**
+   * Envia ou renova o certificado A1 da empresa (`PUT /api/nfse/certificados`,
+   * multipart). e-CNPJ ICP-Brasil, `.pfx` de até 100 KB, da mesma raiz do CNPJ
+   * que vai emitir. Substitui o anterior da mesma raiz. Não é repetido em 5xx.
+   */
+  enviarCertificadoNfse(params: {
+    /** Bytes do `.pfx`/`.p12`, um `Blob`, ou o conteúdo em base64. */
+    certificado: Certificado | Blob;
+    /** Senha do certificado (vazia se o `.pfx` não tiver). */
+    senha?: string;
+    /** Nome do arquivo no envio (padrão `certificado.pfx`). */
+    nomeArquivo?: string;
+  }): Promise<CertificadoNfse> {
+    const form = new FormData();
+    form.append('certificado', certificadoBlob(params.certificado), params.nomeArquivo || 'certificado.pfx');
+    form.append('senha', params.senha ?? '');
+    return this.send('PUT', `${NFSE}/certificados`, { form });
+  }
+
+  /**
+   * Exclui o certificado de uma raiz (`DELETE /api/nfse/certificados/{raiz}`).
+   * Aceita a raiz (8 caracteres) ou o CNPJ inteiro, com ou sem pontuação.
+   * Antes, desative as empresas da raiz.
+   */
+  async excluirCertificadoNfse(params: { raiz: string }): Promise<void> {
+    let raiz = (params.raiz ?? '').replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+    if (raiz.length === 14) raiz = raiz.slice(0, 8);
+    if (raiz.length !== 8) throw new Error('Informe a raiz do CNPJ (8 caracteres) ou o CNPJ.');
+    await this.send('DELETE', `${NFSE}/certificados/${raiz}`);
+  }
+
+  /**
+   * Pede a emissão de uma NFS-e (`POST /api/nfse/notas`). A resposta é `202`,
+   * com a nota `pendente`; o resultado chega pelo webhook ou por `obterNfse`.
+   * Em produção, mande `referencia` (ou `idempotencyKey`): o mesmo pedido
+   * devolve a nota que já existe. Com uma delas, o SDK repete a chamada em
+   * falha de rede e 5xx sem risco de nota em dobro.
+   */
+  emitirNfse(nota: NotaNfseIn, opcoes: { idempotencyKey?: string } = {}): Promise<NotaNfse> {
+    if (!nota || typeof nota !== 'object') throw new Error('Informe os dados da nota.');
+    const chave = chaveIdempotencia(nota.referencia, opcoes.idempotencyKey, nota.ambiente === 'producao');
+    return this.send('POST', `${NFSE}/notas`, {
+      body: { ...nota },
+      headers: opcoes.idempotencyKey ? { 'Idempotency-Key': opcoes.idempotencyKey.trim() } : undefined,
+      idempotent: chave !== undefined,
+    });
+  }
+
+  /** Uma NFS-e emitida (`GET /api/nfse/notas/{notaId}`). */
+  obterNfse(params: { notaId: string }): Promise<NotaNfse> {
+    return this.send('GET', `${NFSE}/notas/${id(params.notaId, 'notaId')}`);
+  }
+
+  /**
+   * Uma página das NFS-e emitidas (`GET /api/nfse/notas`), em ordem de
+   * `updated_at`. Para sincronizar, use `atualizadaDesde`.
+   */
+  listarNfse(params: ListarNotasNfseParams = {}): Promise<PaginaNotasNfse> {
+    const { limite } = params;
+    if (limite !== undefined && (!Number.isInteger(limite) || limite < 1 || limite > 100)) {
+      throw new Error('limite deve ser um inteiro de 1 a 100.');
+    }
+    const desde = params.atualizadaDesde;
+    return this.send('GET', `${NFSE}/notas`, {
+      query: {
+        status: params.status,
+        ambiente: params.ambiente,
+        referencia: params.referencia || undefined,
+        atualizada_desde: desde instanceof Date ? desde.toISOString() : desde || undefined,
+        cursor: params.cursor || undefined,
+        limite,
+      },
+    });
+  }
+
+  /**
+   * Percorre todas as páginas da listagem, seguindo o cursor `proximo`.
+   *
+   * ```ts
+   * for await (const nota of api.iterarNfse({ ambiente: 'producao' })) { ... }
+   * ```
+   */
+  async *iterarNfse(
+    params: Omit<ListarNotasNfseParams, 'cursor'> = {},
+  ): AsyncGenerator<NotaNfse, void, undefined> {
+    let cursor: string | undefined;
+    do {
+      const pagina = await this.listarNfse({ ...params, cursor });
+      for (const nota of pagina.itens ?? []) yield nota;
+      cursor = pagina.proximo ?? undefined;
+    } while (cursor);
+  }
+
+  /**
+   * Pede o cancelamento de uma NFS-e autorizada
+   * (`POST /api/nfse/notas/{notaId}/cancelamento`). A resposta traz a nota
+   * `cancelando`; o resultado chega pelo webhook (`cancelada` ou
+   * `cancelamento_recusado`).
+   */
+  cancelarNfse(params: {
+    notaId: string;
+    /** `1` erro na emissão, `2` serviço não prestado, `9` outros. */
+    motivo: 1 | 2 | 9;
+    /** De 15 a 255 caracteres. */
+    justificativa: string;
+  }): Promise<NotaNfse> {
+    const justificativa = (params.justificativa ?? '').trim();
+    if (justificativa.length < 15 || justificativa.length > 255) {
+      throw new Error('justificativa deve ter de 15 a 255 caracteres.');
+    }
+    return this.send('POST', `${NFSE}/notas/${id(params.notaId, 'notaId')}/cancelamento`, {
+      body: { motivo: params.motivo, justificativa },
+    });
+  }
+
+  /**
+   * Substitui uma NFS-e autorizada por outra com os dados corrigidos
+   * (`POST /api/nfse/notas/{notaId}/substituicao`). Devolve a nota NOVA,
+   * `pendente`, com `substitui_id`. Em produção, mande `referencia` da nota
+   * nova (ou `idempotencyKey`).
+   */
+  substituirNfse(params: {
+    notaId: string;
+    substituicao: SubstituicaoNfseIn;
+    idempotencyKey?: string;
+  }): Promise<NotaNfse> {
+    const s = params.substituicao;
+    if (!s || typeof s !== 'object') throw new Error('Informe os dados da substituição.');
+    const chave = chaveIdempotencia(s.referencia, params.idempotencyKey, false);
+    return this.send('POST', `${NFSE}/notas/${id(params.notaId, 'notaId')}/substituicao`, {
+      body: { ...s },
+      headers: params.idempotencyKey ? { 'Idempotency-Key': params.idempotencyKey.trim() } : undefined,
+      idempotent: chave !== undefined,
+    });
+  }
+
+  /** XML da NFS-e autorizada (`GET /api/nfse/notas/{notaId}/xml`). Não cobra. */
+  async baixarXmlNfse(params: { notaId: string }): Promise<string> {
+    const bytes = await this.send<Uint8Array>('GET', `${NFSE}/notas/${id(params.notaId, 'notaId')}/xml`, {
+      binary: true,
+      headers: { Accept: 'application/xml, application/problem+json' },
+    });
+    return new TextDecoder('utf-8').decode(bytes);
+  }
+
+  /** PDF do DANFSe (`GET /api/nfse/notas/{notaId}/pdf`). Não cobra. */
+  baixarPdfNfse(params: { notaId: string }): Promise<Uint8Array> {
+    return this.send('GET', `${NFSE}/notas/${id(params.notaId, 'notaId')}/pdf`, {
+      binary: true,
+      headers: { Accept: 'application/pdf, application/problem+json' },
+    });
+  }
+
+  /**
+   * Configura o webhook da emissão (`PUT /api/nfse/webhook`). Um por conta,
+   * para os dois ambientes. O `segredo` volta só no primeiro cadastro: guarde-o.
+   * Chamar de novo troca a URL e mantém o segredo (`segredo: null`).
+   */
+  configurarWebhookNfse(params: { url: string }): Promise<WebhookNfseConfigurado> {
+    const url = (params.url ?? '').trim();
+    if (!url) throw new Error('Informe a URL do webhook.');
+    return this.send('PUT', `${NFSE}/webhook`, { body: { url } });
+  }
+
+  /** Webhook da emissão (`GET /api/nfse/webhook`). Sem webhook: `url: null`. */
+  obterWebhookNfse(): Promise<WebhookNfse> {
+    return this.send('GET', `${NFSE}/webhook`);
+  }
+
+  /** Remove o webhook da emissão (`DELETE /api/nfse/webhook`). As notas continuam. */
+  async removerWebhookNfse(): Promise<void> {
+    await this.send('DELETE', `${NFSE}/webhook`);
+  }
+
+  /** Põe de novo na fila os avisos de uma nota (`POST /api/nfse/notas/{notaId}/webhook`). */
+  reenviarWebhookNfse(params: { notaId: string }): Promise<ReenvioWebhookNfse> {
+    return this.send('POST', `${NFSE}/notas/${id(params.notaId, 'notaId')}/webhook`);
+  }
+
   // ------------------------------------------------------ Imóvel rural
 
   /** Parcelas certificadas no SIGEF/INCRA (`GET /api/consultar-sigef`). */
@@ -466,20 +723,28 @@ export class FiscalAPI {
     return this.request<T>('GET', path, query);
   }
 
-  private async request<T>(
+  private request<T>(
     method: Method,
     path: string,
     query?: Record<string, QueryValue>,
     body?: Record<string, unknown>,
   ): Promise<T> {
+    return this.send<T>(method, path, { query, body });
+  }
+
+  private async send<T>(method: Method, path: string, opts: RequestOptions = {}): Promise<T> {
+    const { query, body, form } = opts;
     const url = this.baseUrl + path + encodeQuery(query);
     const headers: Record<string, string> = {
       'X-API-Key': this.apiKey,
       Accept: 'application/json',
       'User-Agent': this.userAgent,
+      ...(opts.headers ?? {}),
     };
-    if (body !== undefined) headers['Content-Type'] = 'application/json';
-    const idempotent = method === 'GET';
+    // multipart: o fetch põe o Content-Type com o boundary.
+    if (body !== undefined && form === undefined) headers['Content-Type'] = 'application/json';
+    const payload = form ?? (body !== undefined ? JSON.stringify(body) : undefined);
+    const idempotent = method === 'GET' || opts.idempotent === true;
 
     for (let attempt = 0; ; attempt++) {
       const controller = new AbortController();
@@ -489,7 +754,7 @@ export class FiscalAPI {
         response = await this.fetchImpl(url, {
           method,
           headers,
-          body: body !== undefined ? JSON.stringify(body) : undefined,
+          body: payload,
           signal: controller.signal,
         });
       } catch (err) {
@@ -503,8 +768,14 @@ export class FiscalAPI {
       }
 
       let text: string;
+      let raw: Uint8Array | undefined;
       try {
-        text = await response.text();
+        if (opts.binary) {
+          raw = new Uint8Array(await response.arrayBuffer());
+          text = response.ok ? '' : new TextDecoder('utf-8').decode(raw);
+        } else {
+          text = await response.text();
+        }
       } catch (err) {
         clearTimeout(timer);
         if (idempotent && attempt < this.maxRetries) {
@@ -516,12 +787,14 @@ export class FiscalAPI {
       clearTimeout(timer);
 
       if (response.ok) {
+        if (raw !== undefined) return raw as T;
         return parseJson(text) as T;
       }
 
       const status = response.status;
       const retryable =
-        RETRYABLE_ANY_METHOD.has(status) || (idempotent && RETRYABLE_IDEMPOTENT.has(status));
+        (RETRYABLE_ANY_METHOD.has(status) && !limiteDoMes(text)) ||
+        (idempotent && RETRYABLE_IDEMPOTENT.has(status));
       if (retryable && attempt < this.maxRetries) {
         await sleep(backoff(attempt, response.headers.get('retry-after')));
         continue;
@@ -616,6 +889,61 @@ function certificadoBase64(cert: Certificado): string {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   }
   return btoa(binary);
+}
+
+/** Id (UUID) de empresa ou nota, pronto para o caminho. */
+function id(valor: string, nome: string): string {
+  const v = (valor ?? '').trim();
+  if (!v) throw new Error(`Informe ${nome}.`);
+  return encodeURIComponent(v);
+}
+
+/**
+ * Confere `referencia` x `Idempotency-Key` antes de chamar: diferentes entre
+ * si é 422 na API; em produção, sem nenhuma das duas, também. Devolve a chave
+ * efetiva (ou `undefined`).
+ */
+function chaveIdempotencia(
+  referencia: string | null | undefined,
+  idempotencyKey: string | undefined,
+  producao: boolean,
+): string | undefined {
+  const ref = typeof referencia === 'string' ? referencia.trim() : '';
+  const key = (idempotencyKey ?? '').trim();
+  if (ref && key && ref !== key) {
+    throw new Error('referencia e idempotencyKey diferentes: mande só uma, ou as duas iguais.');
+  }
+  if (producao && !ref && !key) {
+    throw new Error('Em produção, informe referencia (ou idempotencyKey) para não emitir a nota em dobro.');
+  }
+  return ref || key || undefined;
+}
+
+function certificadoBlob(cert: Certificado | Blob): Blob {
+  if (typeof Blob !== 'undefined' && cert instanceof Blob) return cert;
+  let bytes: Uint8Array;
+  if (typeof cert === 'string') {
+    const b64 = cert.replace(/\s+/g, '');
+    const NodeBuffer = (
+      globalThis as { Buffer?: { from(s: string, enc: 'base64'): Uint8Array } }
+    ).Buffer;
+    if (NodeBuffer) {
+      bytes = new Uint8Array(NodeBuffer.from(b64, 'base64'));
+    } else {
+      const bin = atob(b64);
+      bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    }
+  } else {
+    bytes = cert instanceof Uint8Array ? cert : new Uint8Array(cert as ArrayBuffer);
+  }
+  if (!bytes.length) throw new Error('Informe o certificado (.pfx).');
+  return new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/x-pkcs12' });
+}
+
+/** 429 do limite mensal de homologação: repetir não adianta. */
+function limiteDoMes(text: string): boolean {
+  return text.includes('NFSE_HOMOLOG_LIMITE');
 }
 
 function backoff(attempt: number, retryAfter: string | null): number {
