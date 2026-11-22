@@ -11,6 +11,7 @@ export type {
   DocumentoIE,
   FiscalAPIOptions,
   ListarChavesMonitorNfeParams,
+  ListarNotasNfseParams,
 } from './client.js';
 export {
   verificarAssinaturaWebhook,
