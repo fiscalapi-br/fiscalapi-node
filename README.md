@@ -1,6 +1,8 @@
-# FiscalAPI — SDK Node.js / TypeScript
+# FiscalAPI SDK Node.js / TypeScript
 
-Cliente JavaScript/TypeScript da [FiscalAPI](https://fiscalapi.com.br): Inscrição Estadual nos 27 estados, CNPJ, certidões (CND estadual, CND Federal, CNDT, CRF/FGTS), XML de NF-e e de CT-e por chave, Monitor de NF-e por chave com webhook, emissão de NFS-e Nacional, DIFAL de saída por UF, NFS-e por chave, Simples Nacional, SIGEF, CNIR e perfil do produtor rural.
+SDK oficial em Node.js e TypeScript da [FiscalAPI](https://fiscalapi.com.br) para consultar inscrição estadual (SINTEGRA) nos 27 estados, CNPJ na Receita Federal, Simples Nacional, certidões (CND estadual, CND Federal, CNDT, CRF/FGTS), XML de NF-e e de CT-e pela chave e imóvel rural no CNIR/CAFIR e no SIGEF. O Monitor de NF-e acompanha a nota pela chave, sem certificado, e avisa no seu webhook quando ela é cancelada.
+
+Cobre também NFS-e por chave, DIFAL de saída por UF, emissão de NFS-e Nacional e perfil do produtor rural. Pacote `fiscalapi-br` no npm. Documentação: [docs.fiscalapi.com.br](https://docs.fiscalapi.com.br) e [guia Node.js](https://docs.fiscalapi.com.br/docs/guias/node-lote).
 
 - Zero dependências: usa o `fetch` nativo (Node 18+, Bun, Deno, edge runtimes).
 - Tipado em TypeScript, com ESM e CommonJS.
@@ -28,7 +30,12 @@ import { FiscalAPI } from 'fiscalapi-br';
 
 const api = new FiscalAPI('sua-chave'); // ou defina FISCALAPI_API_KEY
 
-const resp = await api.consultarIe({ uf: 'MT', cpf: '12345678909' });
+// CNPJ na Receita Federal
+const empresa = await api.consultarCnpj({ cnpj: '68178106000113' });
+console.log(empresa.result?.razao_social, empresa.result?.situacao_cadastral);
+
+// Inscrição estadual de um produtor rural pelo CPF, em MT (CPF fictício)
+const resp = await api.consultarIe({ uf: 'MT', cpf: '52998224725' });
 for (const ie of resp.results) {
   console.log(ie.inscricao_estadual, ie.situacao_ie, ie.municipio);
 }
